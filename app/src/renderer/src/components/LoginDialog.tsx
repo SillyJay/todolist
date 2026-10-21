@@ -9,7 +9,8 @@ import {
   GraduationCap,
   Sparkles,
   Loader2,
-  CalendarDays
+  CalendarDays,
+  Globe
 } from 'lucide-react'
 import {
   adaptersStatus,
@@ -19,7 +20,6 @@ import {
   chaoxingRefreshSchedule,
   refreshStatus,
   xiaoyaImportCookie,
-  xiaoyaLogin,
   type AdaptersStatus,
   type RefreshStatus
 } from '../lib/api'
@@ -285,10 +285,27 @@ function ChaoxingPanel({
               登录
             </button>
             <button
-              onClick={() => setCookieMode((v) => !v)}
+              onClick={async () => {
+                setBusy(true)
+                setMsg(null)
+                try {
+                  const r = await window.api.openLogin('chaoxing')
+                  setMsg({ ok: r.ok, text: r.message })
+                  if (r.ok) await onChanged()
+                } finally {
+                  setBusy(false)
+                }
+              }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#9a9aa8] hover:text-[#e0e0e8]"
+              title="遇到验证码时用这个：弹出浏览器窗口，登录完关闭即可"
             >
-              <Cookie size={13} /> 用 Cookie 登录
+              <Globe size={13} /> 验证码？内置浏览器登录
+            </button>
+            <button
+              onClick={() => setCookieMode((v) => !v)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#6b6b7a] hover:text-[#c0c0cc]"
+            >
+              <Cookie size={13} /> 手动 Cookie
             </button>
           </div>
 
@@ -356,18 +373,31 @@ function XiaoyaPanel({
     }
   }
 
-  const doLogin = async (): Promise<void> => {
-    const r = await xiaoyaLogin('', '')
-    setMsg({ ok: r.ok, text: r.message })
-  }
-
   return (
     <div className="space-y-3">
       <div className="text-[11.5px] text-[#6b6b7a] leading-relaxed">
-        小雅登录需要短信验证，暂不支持账号密码直登。请在浏览器登录
-        <span className="text-[#9a9aa8]"> xiaoya.iflytek.com </span>
-        后导入 Cookie，程序据此读取作业列表（只读，不会代交作业）。
+        小雅登录需要短信/图形验证，用内置浏览器最省事：点下面按钮 →
+        弹出登录页 → 正常登录 → <span className="text-[#9a9aa8]">关闭窗口</span>
+        → 程序自动读取 Cookie。全程只读，不会代交作业。
       </div>
+
+      <button
+        onClick={async () => {
+          setBusy(true)
+          setMsg(null)
+          try {
+            const r = await window.api.openLogin('xiaoya')
+            setMsg({ ok: r.ok, text: r.message })
+            if (r.ok) await onChanged()
+          } finally {
+            setBusy(false)
+          }
+        }}
+        disabled={busy}
+        className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-50"
+      >
+        <Globe size={13} /> 用内置浏览器登录
+      </button>
 
       {loggedIn && (
         <div className="flex items-center gap-2 text-[12px] text-[#7ee2b8]">
@@ -387,15 +417,9 @@ function XiaoyaPanel({
         <button
           onClick={() => void doCookie()}
           disabled={busy || !cookieText.trim()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#9a9aa8] hover:text-[#e0e0e8] disabled:opacity-40"
         >
-          <Cookie size={13} /> 导入 Cookie
-        </button>
-        <button
-          onClick={() => void doLogin()}
-          className="px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#8a8a98] hover:text-[#e0e0e8]"
-        >
-          账密登录（暂不可用）
+          <Cookie size={13} /> 手动粘贴 Cookie
         </button>
       </div>
 

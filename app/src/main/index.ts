@@ -6,6 +6,7 @@ import { startBackend, stopBackend, getBackendPort } from './backend'
 import { createTray } from './tray'
 import { initLogger, log } from './logger'
 import { startNotificationWatcher, stopNotificationWatcher } from './notify'
+import { openLoginWindow } from './login'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -79,6 +80,9 @@ app.whenReady().then(async () => {
   // IPC 先注册，避免渲染进程抢先请求时拿不到（端口从后端管理器实时读取）
   ipcMain.handle('backend:getPort', () => getBackendPort())
   ipcMain.handle('backend:getBaseUrl', () => `http://127.0.0.1:${getBackendPort()}/api`)
+  ipcMain.handle('login:open', async (_e, platform: 'xiaoya' | 'chaoxing') =>
+    openLoginWindow(platform, mainWindow, `http://127.0.0.1:${getBackendPort()}/api`)
+  )
 
   // 启动 Python 后端子进程
   const port = await startBackend()
