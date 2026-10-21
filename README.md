@@ -49,3 +49,6 @@ cd app && npm run dev
 ```
 
 环境踩坑记录见 `docs/DEV-NOTES.md`。
+
+# 一键启动（双击）
+Windows 下可直接双击根目录的 dev.cmd，自动清理干扰环境变量并启动前端+后端。
