@@ -120,6 +120,8 @@ export interface DailyPlan {
   title: string
   note?: string | null
   color: string
+  quadrant?: string
+  done?: number
 }
 
 export const listPlans = (from: string, to: string): Promise<{ items: DailyPlan[] }> =>

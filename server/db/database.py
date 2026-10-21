@@ -1,5 +1,5 @@
 """数据库引擎与会话工厂（规格 §12.4：check_same_thread=False + 会话工厂）。"""
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
 
 from config import db_path
@@ -14,6 +14,27 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 def init_db() -> None:
     Base.metadata.create_all(engine)
+    _migrate()
+
+
+def _migrate() -> None:
+    """轻量迁移：SQLite 老库缺列时补上（只加列，不动数据）。"""
+    wanted = {
+        "daily_plans": [
+            ("quadrant", "TEXT DEFAULT 'q2'"),
+            ("done", "INTEGER DEFAULT 0"),
+        ],
+    }
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table, columns in wanted.items():
+            if table not in existing_tables:
+                continue
+            have = {c["name"] for c in inspector.get_columns(table)}
+            for name, ddl in columns:
+                if name not in have:
+                    conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
 
 
 def get_db():

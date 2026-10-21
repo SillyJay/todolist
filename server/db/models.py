@@ -75,7 +75,11 @@ class SummaryCache(Base):
 
 
 class DailyPlan(Base):
-    """日计划（规格 §13.6）：用户自定义的分钟级安排。"""
+    """日计划（规格 §13.6）：用户自定义的分钟级安排。
+
+    quadrant 采用艾森豪威尔矩阵四象限：
+      q1 紧急且重要 / q2 重要不紧急 / q3 紧急不重要 / q4 都不紧急
+    """
     __tablename__ = "daily_plans"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
@@ -84,6 +88,8 @@ class DailyPlan(Base):
     end_min = Column(Integer, nullable=False)
     title = Column(Text, nullable=False)
     note = Column(Text)
-    color = Column(Text, default="blue")       # blue/green/amber/violet/rose
+    color = Column(Text, default="blue")
+    quadrant = Column(Text, default="q2")      # q1/q2/q3/q4
+    done = Column(Integer, default=0)          # 0/1
     created_at = Column(Text)
     updated_at = Column(Text)

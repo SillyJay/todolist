@@ -18,6 +18,8 @@ class PlanCreate(BaseModel):
     title: str
     note: str | None = None
     color: str = "blue"
+    quadrant: str = "q2"
+    done: int = 0
 
 
 class PlanPatch(BaseModel):
@@ -27,6 +29,8 @@ class PlanPatch(BaseModel):
     title: str | None = None
     note: str | None = None
     color: str | None = None
+    quadrant: str | None = None
+    done: int | None = None
 
 
 def _now() -> str:
@@ -42,6 +46,8 @@ def _ser(p: DailyPlan) -> dict:
         "title": p.title,
         "note": p.note,
         "color": p.color,
+        "quadrant": p.quadrant or "q2",
+        "done": p.done or 0,
     }
 
 
@@ -68,6 +74,8 @@ def create_plan(body: PlanCreate, db: Session = Depends(get_db)):
         title=body.title,
         note=body.note,
         color=body.color,
+        quadrant=body.quadrant,
+        done=body.done,
         created_at=_now(),
         updated_at=_now(),
     )
