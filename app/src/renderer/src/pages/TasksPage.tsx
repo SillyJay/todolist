@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Plus, CalendarPlus, Check, Trash2, ExternalLink, Loader2 } from 'lucide-react'
+import { Plus, CalendarPlus, Check, Trash2, ExternalLink, Loader2, ListPlus } from 'lucide-react'
+import ImportTaskDialog from '../components/ImportTaskDialog'
 import {
   listTasks,
   createTask,
@@ -30,6 +31,7 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
   const [toast, setToast] = useState('')
   const [onlyDdl, setOnlyDdl] = useState(false)
   const [semesterOnly, setSemesterOnly] = useState(true)
+  const [importOpen, setImportOpen] = useState(false)
 
   const refresh = async (): Promise<void> => {
     try {
@@ -145,6 +147,13 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
         </div>
 
         <button
+          onClick={() => setImportOpen(true)}
+          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] bg-[#1c1c22] border border-[#2e2e38] text-[#b0b0be] hover:border-[#4f8cff] hover:text-[#e8e8ec] transition-colors"
+          title="粘贴通知文本，自动解析成任务"
+        >
+          <ListPlus size={13} /> 文本导入
+        </button>
+        <button
           onClick={() => setSemesterOnly((v) => !v)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] border transition-colors ${
             semesterOnly
@@ -252,6 +261,10 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
             />
           ))}
         </div>
+      )}
+
+      {importOpen && (
+        <ImportTaskDialog onClose={() => setImportOpen(false)} onCreated={() => void refresh()} />
       )}
 
       <div className="mt-6 text-[11px] text-[#4a4a58]">

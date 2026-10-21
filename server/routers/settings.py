@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from db.database import get_db
 from db.models import Setting
+from services.secrets import get_secret, set_secret
 
 router = APIRouter()
 
@@ -17,10 +18,10 @@ SECRET_KEYS = {"glm_api_key"}
 @router.get("")
 def get_settings(db: Session = Depends(get_db)):
     rows = db.query(Setting).all()
-    data = {r.key: r.value for r in rows}
+    data = {r.key: r.value for r in rows if r.key not in SECRET_KEYS}
     for k in SECRET_KEYS:
-        if data.get(k):
-            data[k] = "********"  # 只回掩码
+        if get_secret(k):
+            data[k] = "********"  # 只回掩码，绝不回明文
     return data
 
 
@@ -28,9 +29,9 @@ def get_settings(db: Session = Depends(get_db)):
 def put_settings(body: dict, db: Session = Depends(get_db)):
     for k, v in body.items():
         if k in SECRET_KEYS:
-            from config import set_secret
-            set_secret(k, str(v))
-            v = "1"  # 占位标记，表示已配置
+            if str(v) and str(v) != "********":
+                set_secret(k, str(v))
+            continue  # 密钥不进 settings 表
         row = db.get(Setting, k)
         if row:
             row.value = str(v)

@@ -37,6 +37,15 @@ class ImportTextBody(BaseModel):
     text: str
 
 
+class ConfirmBody(BaseModel):
+    title: str
+    course_name: str | None = None
+    ddl: str | None = None
+    summary: str | None = None
+    raw_text: str | None = None
+    confidence: float | None = None
+
+
 def _now() -> str:
     return datetime.now().astimezone().isoformat(timespec="seconds")
 
@@ -139,14 +148,36 @@ def delete_task(task_id: int, db: Session = Depends(get_db)):
 
 @router.post("/import-text")
 def import_text(body: ImportTextBody):
-    """手动导入：调 AI 提取 → 返回草稿（不入库）。Phase 2 实现。"""
-    return {"draft": None, "mock": True, "echo_len": len(body.text)}
+    """手动导入：调 AI 提取 → 返回草稿（不入库，等用户确认）。"""
+    from ai.extract import extract
+
+    draft = extract(body.text)
+    return {"draft": draft, "raw_len": len(body.text)}
 
 
 @router.post("/confirm")
-def confirm_task():
-    """确认草稿入库。Phase 2 实现。"""
-    return {"ok": True, "mock": True}
+def confirm_task(body: ConfirmBody, db: Session = Depends(get_db)):
+    """确认草稿入库。"""
+    if not body.title.strip():
+        raise HTTPException(400, "标题不能为空")
+    t = Task(
+        platform="manual",
+        course_name=body.course_name,
+        course_abbr=body.course_name[:8] if body.course_name else None,
+        title=body.title.strip(),
+        ddl=body.ddl,
+        status="pending",
+        summary=body.summary,
+        raw_text=body.raw_text,
+        confidence=body.confidence,
+        in_semester=1,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return _serialize(t)
 
 
 @router.get("/pending-confirm")

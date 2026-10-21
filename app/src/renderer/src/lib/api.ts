@@ -241,6 +241,96 @@ export const xiaoyaImportCookie = (
     body: JSON.stringify({ cookie })
   })
 
+// ---- AI（规格 §7.3）----
+export interface AiStatus {
+  configured: boolean
+  model: string | null
+  base_url: string | null
+}
+
+export const aiStatus = (): Promise<AiStatus> => request('/ai/status')
+
+export const setAiKey = (
+  apiKey: string,
+  baseUrl?: string,
+  model?: string
+): Promise<{ ok: boolean; backend?: string }> =>
+  request('/ai/key', {
+    method: 'POST',
+    body: JSON.stringify({ api_key: apiKey, base_url: baseUrl, model })
+  })
+
+export const testAi = (): Promise<{ ok: boolean; code?: string; message: string }> =>
+  request('/ai/test', { method: 'POST' })
+
+export const summarizeText = (
+  text: string
+): Promise<{ summary: string | null; cached: boolean; degraded?: boolean; message?: string }> =>
+  request('/ai/summarize', { method: 'POST', body: JSON.stringify({ text }) })
+
+export interface TaskDraft {
+  is_task: boolean
+  title: string
+  course_name: string | null
+  ddl: string | null
+  summary: string
+  confidence: number
+  engine: string
+  hint: string
+}
+
+export const importText = (
+  text: string
+): Promise<{ draft: TaskDraft; raw_len: number }> =>
+  request('/tasks/import-text', { method: 'POST', body: JSON.stringify({ text }) })
+
+export const confirmDraft = (body: {
+  title: string
+  course_name?: string | null
+  ddl?: string | null
+  summary?: string | null
+  raw_text?: string | null
+  confidence?: number | null
+}): Promise<Task> => request('/tasks/confirm', { method: 'POST', body: JSON.stringify(body) })
+
+/** Agent 对话：消费 SSE，onEvent 回调 tool / message / error */
+export async function chatStream(
+  message: string,
+  history: { role: string; content: string }[],
+  onEvent: (e: { type: string; content?: string; name?: string; message?: string }) => void
+): Promise<void> {
+  const base = await getBaseUrl()
+  const res = await fetch(`${base}/ai/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history })
+  })
+  if (!res.body) throw new Error('无响应流')
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const parts = buffer.split('\n\n')
+    buffer = parts.pop() ?? ''
+    for (const part of parts) {
+      const line = part.trim()
+      if (!line.startsWith('data:')) continue
+      const payload = line.slice(5).trim()
+      if (payload === '[DONE]') return
+      try {
+        onEvent(JSON.parse(payload))
+      } catch {
+        /* 忽略坏包 */
+      }
+    }
+  }
+}
+
 // ---- 设置（规格 §7.5）----
 export const getSettings = (): Promise<Record<string, string>> => request('/settings')
 export const putSettings = (patch: Record<string, string>): Promise<{ ok: boolean }> =>

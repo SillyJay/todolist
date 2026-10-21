@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
-import { Info, Sparkles } from 'lucide-react'
-import { getSettings, type Task } from '../lib/api'
+import { Info, Sparkles, Wand2, Loader2 } from 'lucide-react'
+import { getSettings, summarizeText, type Task } from '../lib/api'
 
 /** 右侧 AI 面板（规格 §8）：展示选中任务的原文/摘要、置信度、AI 调用日志。 */
 function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
   const [mode, setMode] = useState<'summary' | 'raw'>('summary')
   const [aiOn, setAiOn] = useState(true)
+  const [summary, setSummary] = useState('')
+  const [busy, setBusy] = useState(false)
 
   useEffect(() => {
     void (async () => {
@@ -59,9 +61,30 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
               </div>
             </div>
 
-            <Block title={mode === 'summary' ? 'AI 摘要' : '原文'}>
+            <Block
+              title={mode === 'summary' ? 'AI 摘要' : '原文'}
+              action={
+                mode === 'summary' && task.raw_text ? (
+                  <button
+                    onClick={async () => {
+                      setBusy(true)
+                      try {
+                        const r = await summarizeText(task.raw_text as string)
+                        setSummary(r.summary || r.message || '生成失败')
+                      } finally {
+                        setBusy(false)
+                      }
+                    }}
+                    className="flex items-center gap-1 text-[10.5px] text-[#6b6b7a] hover:text-[#4f8cff]"
+                  >
+                    {busy ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />}
+                    生成摘要
+                  </button>
+                ) : null
+              }
+            >
               {mode === 'summary'
-                ? task.summary || '（还没有摘要，Phase 2 接入 AI 生成）'
+                ? summary || task.summary || '（还没有摘要，点右上角生成；需先配置 API Key）'
                 : task.raw_text || '（该任务没有保留原文）'}
             </Block>
 
@@ -90,14 +113,19 @@ function Tag({ children }: { children: React.ReactNode }): React.JSX.Element {
 
 function Block({
   title,
-  children
+  children,
+  action
 }: {
   title: string
   children: React.ReactNode
+  action?: React.ReactNode
 }): React.JSX.Element {
   return (
     <div>
-      <div className="text-[11px] text-[#5c5c6a] mb-1">{title}</div>
+      <div className="flex items-center justify-between mb-1">
+        <span className="text-[11px] text-[#5c5c6a]">{title}</span>
+        {action}
+      </div>
       <div className="p-2.5 rounded-md bg-[#1a1a20] border border-[#26262f] text-[12px] leading-relaxed text-[#b0b0be] whitespace-pre-wrap">
         {children}
       </div>

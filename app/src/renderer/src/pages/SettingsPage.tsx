@@ -7,12 +7,17 @@ import {
   chaoxingLogin,
   chaoxingImportCookie,
   chaoxingRefresh,
-  refreshStatus
+  refreshStatus,
+  aiStatus,
+  setAiKey,
+  testAi
 } from '../lib/api'
 
 /** 设置页（规格 §7.5）：Phase 1 先做 AI Key / 工作区 / 轮询间隔 / 主题。 */
 function SettingsPage(): React.JSX.Element {
   const [values, setValues] = useState<Record<string, string>>({})
+  const [ai, setAi] = useState<{ configured: boolean; model: string | null } | null>(null)
+  const [aiMsg, setAiMsg] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -23,6 +28,7 @@ function SettingsPage(): React.JSX.Element {
       try {
         const s = await getSettings()
         setValues(s)
+        setAi(await aiStatus())
       } finally {
         setLoading(false)
       }
@@ -51,7 +57,7 @@ function SettingsPage(): React.JSX.Element {
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder={values.glm_api_key ? '已配置（••••••••），输入可覆盖' : '粘贴 API Key'}
+              placeholder={ai?.configured ? '已配置（••••••••），输入可覆盖' : '粘贴 API Key'}
               className="w-full pl-8 pr-9 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px] outline-none focus:border-[#4f8cff]"
             />
             <button
@@ -62,16 +68,33 @@ function SettingsPage(): React.JSX.Element {
             </button>
           </div>
           <button
-            onClick={() => apiKey && void save({ glm_api_key: apiKey })}
+            onClick={async () => {
+              if (!apiKey) return
+              await setAiKey(apiKey)
+              setApiKey('')
+              setAi(await aiStatus())
+              setAiMsg('已保存到系统凭据管理器')
+            }}
             disabled={!apiKey}
             className="flex items-center gap-1 px-3 py-2 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
           >
             <Save size={13} /> 保存
           </button>
+          <button
+            onClick={async () => {
+              setAiMsg('测试中…')
+              const r = await testAi()
+              setAiMsg(r.message)
+            }}
+            className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+          >
+            测试连接
+          </button>
         </div>
         <div className="mt-2 text-[11.5px] text-[#5c5c6a]">
-          模型：{values.llm_model || 'glm-4.5-flash'} · 接口：{values.llm_base_url || '默认智谱'}
+          状态：{ai?.configured ? `已配置 · ${ai.model}` : '未配置'} · Key 存于 Windows 凭据管理器，不落明文
         </div>
+        {aiMsg && <div className="mt-1 text-[11.5px] text-[#7ee2b8]">{aiMsg}</div>}
       </Section>
 
       <Section title="工作区" desc="开启后作业附件按课程自动归档，程序只增不删。">
