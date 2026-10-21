@@ -55,12 +55,29 @@ ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
 ```
 
 **问题 3**：本机显卡为虚拟显示适配器（GameViewer Virtual Display Adapter，远程/云桌面环境），
-Electron 硬件加速初始化易失败导致进程静默退出。
+Electron **GPU 子进程无法启动**，报：
 
-**规避**：
-- 主进程已调用 `app.disableHardwareAcceleration()` 强制软件渲染；
-- Electron 版本锁定 37.x（与 WorkBuddy 自身一致，已验证可在此机器运行），未用 44.x；
-- 主进程启动日志写入 `%APPDATA%\CampusAssistant\main.log`，GUI 无输出时先看该文件。
+```
+GPU process launch failed: error_code=18
+FATAL:gpu_data_manager_impl_private.cc:415] GPU process isn't usable. Goodbye.
+```
+
+表现为窗口一闪而过、进程静默退出、控制台无任何 JS 报错（日志已落盘才看到）。
+
+**规避**（已写入 `src/main/index.ts`）：
+
+```ts
+app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('disable-gpu')
+app.commandLine.appendSwitch('disable-gpu-compositing')
+app.commandLine.appendSwitch('in-process-gpu')
+app.commandLine.appendSwitch('disable-software-rasterizer')
+```
+
+**问题 3b**：`D:\HOMEWORK` 目录 ACL 异常（含 `Everyone Deny DeleteSubdirectoriesAndFiles`
+与非标准 SID 的显式 ACE），非管理员进程在此目录加载 Electron / 创建 Python venv 均失败
+（Electron 直接 0xC0000005 崩溃，venv 报 pyvenv.cfg 打不开）。以管理员身份运行 WorkBuddy 后恢复正常。
+**长期建议**：把项目迁到无特殊 ACL 的普通目录（如 `D:\projects\`），即可摆脱管理员依赖。
 
 **问题 4**：PowerShell 7.6 在窄窗口下启动会崩（`totalWidth must be a non-negative value`），
 与本项目无关。规避：窗口拉宽，或 `[Environment]::SetEnvironmentVariable('POWERSHELL_UPDATECHECK','Off','User')`，
