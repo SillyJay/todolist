@@ -4,23 +4,48 @@
  */
 let baseUrlPromise: Promise<string> | null = null
 
+const FALLBACK_BASE = 'http://127.0.0.1:8765/api'
+
 export function getBaseUrl(): Promise<string> {
   if (!baseUrlPromise) {
-    baseUrlPromise = window.api.getBackendBaseUrl()
+    baseUrlPromise = (async () => {
+      try {
+        if (typeof window !== 'undefined' && window.api?.getBackendBaseUrl) {
+          return await window.api.getBackendBaseUrl()
+        }
+        console.warn('[api] window.api 不可用，回退到默认端口')
+        return FALLBACK_BASE
+      } catch (e) {
+        console.warn('[api] 取后端地址失败，回退到默认端口:', e)
+        return FALLBACK_BASE
+      }
+    })()
   }
   return baseUrlPromise
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const base = await getBaseUrl()
-  const res = await fetch(`${base}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init
-  })
-  if (!res.ok) {
-    throw new Error(`API ${path} failed: ${res.status}`)
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 8000)
+  try {
+    const res = await fetch(`${base}${path}`, {
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+      ...init
+    })
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status} ${res.statusText} (${path})`)
+    }
+    return (await res.json()) as T
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') {
+      throw new Error(`请求超时：${base}${path}`)
+    }
+    throw e
+  } finally {
+    clearTimeout(timer)
   }
-  return res.json() as Promise<T>
 }
 
 // ---- 系统 ----
@@ -44,7 +69,9 @@ export interface Task {
   confidence?: number | null
 }
 
-export const listTasks = (params: Record<string, string> = {}): Promise<{ items: Task[]; total: number }> => {
+export const listTasks = (
+  params: Record<string, string> = {}
+): Promise<{ items: Task[]; total: number }> => {
   const qs = new URLSearchParams(params).toString()
   return request(`/tasks${qs ? `?${qs}` : ''}`)
 }

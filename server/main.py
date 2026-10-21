@@ -4,6 +4,7 @@
 - 用法：python main.py --port 8765
 """
 import argparse
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
@@ -12,7 +13,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from db.database import init_db
 from routers import adapters, ai, calendar, files, settings, tasks
 
-app = FastAPI(title="Campus Assistant API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Campus Assistant API", lifespan=lifespan)
 
 # 只允许本地前端来源（开发期 vite dev server / 打包后 file:// 均走 127.0.0.1）
 app.add_middleware(
@@ -22,11 +30,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-
-@app.on_event("startup")
-def _startup() -> None:
-    init_db()
 
 
 @app.get("/api/health")

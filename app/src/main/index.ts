@@ -40,6 +40,11 @@ function createWindow(): void {
     mainWindow?.show()
   })
 
+  // 渲染进程日志转发到主进程日志文件，便于无 DevTools 场景排查
+  mainWindow.webContents.on('console-message', (_event, level, message) => {
+    log(`[renderer:${level}] ${message}`)
+  })
+
   // 关闭窗口最小化到托盘，不退出（规格模块 1）
   mainWindow.on('close', (e) => {
     if (!isQuitting) {
@@ -70,11 +75,13 @@ app.whenReady().then(async () => {
     optimizer.watchWindowShortcuts(window)
   })
 
-  // 启动 Python 后端子进程，端口提供给渲染进程
+  // IPC 先注册，避免渲染进程抢先请求时拿不到（端口从后端管理器实时读取）
+  ipcMain.handle('backend:getPort', () => getBackendPort())
+  ipcMain.handle('backend:getBaseUrl', () => `http://127.0.0.1:${getBackendPort()}/api`)
+
+  // 启动 Python 后端子进程
   const port = await startBackend()
   log(`backend port=${port}`)
-  ipcMain.handle('backend:getPort', () => getBackendPort())
-  ipcMain.handle('backend:getBaseUrl', () => `http://127.0.0.1:${port}/api`)
 
   createWindow()
   log('window created')

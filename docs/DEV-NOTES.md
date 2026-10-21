@@ -95,3 +95,29 @@ git config http.proxy http://127.0.0.1:10177
 
 - 规格要求 React 18，electron-vite 最新脚手架默认 React 19；两者 API 兼容，按 19 使用并在此记录偏差。
 - 规格要求 Electron 最新稳定版；当前为 44.x。
+
+## 渲染进程连不上后端（CSP）
+
+**问题**：页面显示「后端健康检查失败」，但主进程日志里 `[backend] healthy on port 8765` 正常，
+渲染进程控制台报：
+
+```
+Refused to connect to 'http://127.0.0.1:8765/api/health' because it violates
+the following Content Security Policy directive: "default-src 'self'"
+```
+
+**原因**：electron-vite 脚手架默认 CSP 只写了 `default-src 'self'`，没有放行 `connect-src`，
+所有 fetch 到本机后端的请求都被浏览器安全策略拦掉。
+
+**修复**（`src/renderer/index.html`）：
+
+```
+connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*
+```
+
+端口要写成通配（`*`），因为后端端口会自动顺延。
+
+## 渲染进程日志进主进程日志
+
+主进程监听 `webContents.on('console-message')`，把渲染进程的 console 输出转发到
+`main.log`（前缀 `[renderer]`）。没有 DevTools 的场景下排查前端问题非常有效。

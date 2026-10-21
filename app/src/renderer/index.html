@@ -3,10 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <title>校园信息管理助手</title>
-    <!-- https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP -->
+    <!--
+      CSP 说明：connect-src 必须放行本机后端（127.0.0.1/localhost 任意端口，
+      因为端口会自动顺延 8765→8766…）与 Vite HMR 的 websocket。
+    -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
+      content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*"
     />
   </head>
 
