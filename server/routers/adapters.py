@@ -267,6 +267,56 @@ def xiaoya_import_cookie(body: CookieBody):
     return xiaoya.import_cookies(body.cookie)
 
 
+@router.post("/xiaoya/refresh")
+def xiaoya_refresh(db: Session = Depends(get_db)):
+    """同步小雅作业任务（HTTP 直连，2-5 秒）。按 task_id 去重。"""
+    if not xiaoya.has_session():
+        return {"ok": False, "code": "NOT_LOGGED_IN", "message": "未登录小雅"}
+    try:
+        items = xiaoya.fetch_assignments()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "code": "FETCH_FAILED", "message": str(e)}
+
+    created = updated = 0
+    for a in items:
+        existing = (
+            db.query(Task)
+            .filter(Task.platform == "xiaoya", Task.source_msg_id == a.source_msg_id)
+            .first()
+        )
+        target = {"submitted": "done", "expired": "expired"}.get(a.status, "pending")
+        if existing:
+            changed = False
+            if a.ddl and existing.ddl != a.ddl:
+                existing.ddl = a.ddl
+                changed = True
+            if existing.status != target:
+                existing.status = target
+                changed = True
+            if changed:
+                existing.updated_at = _now()
+                updated += 1
+            continue
+        db.add(
+            Task(
+                platform="xiaoya",
+                course_name=a.course_name,
+                course_abbr=_abbr(a.course_name),
+                title=a.title,
+                ddl=a.ddl,
+                status=target,
+                url=a.url,
+                source_msg_id=a.source_msg_id,
+                created_at=_now(),
+                updated_at=_now(),
+            )
+        )
+        created += 1
+    db.commit()
+    _mark_semester(db)
+    return {"ok": True, "created": created, "updated": updated, "total": len(items)}
+
+
 @router.post("/xiaoya/login")
 def xiaoya_login(body: ChaoxingLoginBody):
     return xiaoya.login(body.username, body.password)

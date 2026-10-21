@@ -1,17 +1,28 @@
 """讯飞小雅 Adapter（规格 §5 模块 6）。
 
-小雅没有公开 API，登录态只能靠浏览器会话。当前实现：
-- Cookie 导入 / 持久化 / 状态检测（已完成）
-- 作业抓取：Phase 3 用 Playwright 打开 `xiaoya.iflytek.com` 作业页读取
-- ⚠️ 红线：交作业完全人工，不做任何自动上传/提交
+实测（2026-10）：
+- 登录态靠浏览器 Cookie（内置浏览器登录导入），其中 `HS-prd-access-token` 即 Bearer 令牌
+- 课程列表：GET /api/jx-iresource/group/student/groups?time_flag=1
+- 内容树：GET /api/jx-iresource/resource/queryCourseResources/v2?group_id=
+         （任务本身不带标题，用 node_id 到内容树里映射名称）
+- 任务列表：GET /api/jx-stat/group/task/queryTaskNotices?group_id=&role=1
+- ⚠️ 红线：只读；交作业完全人工，不做任何自动上传/提交
 """
 import json
 import os
+from datetime import datetime, timezone, timedelta
 
-from adapters.base import BaseAdapter, Assignment
+import httpx
+
+from adapters.base import Assignment, BaseAdapter
 from config import data_dir
 
-XIAOYA_HOST = "https://xiaoya.iflytek.com"
+API = "https://xyapi.fifedu.com/api"
+UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+)
+CN = timezone(timedelta(hours=8))
 
 
 class XiaoyaAdapter(BaseAdapter):
@@ -36,9 +47,8 @@ class XiaoyaAdapter(BaseAdapter):
             json.dump(cookies, f, ensure_ascii=False, indent=2)
 
     def has_session(self) -> bool:
-        """小雅的会话凭据名不固定，只要导入过非空 Cookie 即视为已配置，
-        真实有效性由 fetch 时的跳转判断。"""
-        return bool(self.load_cookies())
+        c = self.load_cookies()
+        return bool(c.get("HS-prd-access-token"))
 
     def import_cookies(self, raw: str) -> dict:
         cookies: dict[str, str] = {}
@@ -49,23 +59,147 @@ class XiaoyaAdapter(BaseAdapter):
             k, v = k.strip(), v.strip()
             if k:
                 cookies[k] = v
-        if not cookies:
-            return {"ok": False, "code": "BAD_COOKIE", "message": "Cookie 为空"}
+        if not cookies.get("HS-prd-access-token"):
+            return {
+                "ok": False,
+                "code": "BAD_COOKIE",
+                "message": "缺少 HS-prd-access-token，请重新登录小雅",
+            }
         self.save_cookies(cookies)
         return {"ok": True, "code": "OK", "message": f"已导入 {len(cookies)} 个 Cookie 字段"}
 
     def login(self, username: str = "", password: str = "", **kwargs) -> dict:
-        """账号密码登录：小雅登录需短信/图形验证，暂不支持纯 HTTP 登录。"""
         return {
             "ok": False,
             "code": "NEED_BROWSER",
-            "message": "小雅暂不支持直接账密登录，请在浏览器登录后导入 Cookie",
+            "message": "小雅登录需验证码，请用「内置浏览器登录」",
         }
+
+    # ---------- 请求 ----------
+
+    def _client(self) -> httpx.Client:
+        ck = self.load_cookies()
+        token = ck.get("HS-prd-access-token", "")
+        headers = {
+            "User-Agent": UA,
+            "Referer": "https://xiaoya.fifedu.com/",
+            "Origin": "https://xiaoya.fifedu.com",
+            "authorization": f"Bearer {token}",
+            "app-code": "jx-web",
+            "x-platform": "web",
+            "x-language": "zh-CN",
+        }
+        school = ck.get("HS-prd-login-schoolId", "")
+        if school:
+            headers["schoolid"] = school
+        return httpx.Client(timeout=25, headers=headers, cookies=ck)
 
     # ---------- 抓取 ----------
 
+    def fetch_courses(self) -> list[dict]:
+        with self._client() as cli:
+            r = cli.get(
+                f"{API}/jx-iresource/group/student/groups",
+                params={"time_flag": 1, "page_num": 1, "page_size": 50},
+            )
+            r.raise_for_status()
+            data = (r.json() or {}).get("data") or {}
+        out = []
+        for c in data.get("data_list") or []:
+            out.append(
+                {
+                    "id": str(c.get("id")),
+                    "name": c.get("site_name") or c.get("name") or "未命名课程",
+                }
+            )
+        return out
+
+    def _node_names(self, cli: httpx.Client, group_id: str) -> dict[str, str]:
+        """课程内容树 → {node_id: 名称}，用于给任务补标题。"""
+        try:
+            r = cli.get(
+                f"{API}/jx-iresource/resource/queryCourseResources/v2",
+                params={"group_id": group_id},
+            )
+            data = (r.json() or {}).get("data") or []
+        except (httpx.HTTPError, ValueError):
+            return {}
+        out: dict[str, str] = {}
+        stack = list(data) if isinstance(data, list) else []
+        while stack:
+            node = stack.pop()
+            if not isinstance(node, dict):
+                continue
+            nid, name = node.get("id"), node.get("name")
+            if nid and name:
+                out[str(nid)] = name
+            for child in node.get("children") or []:
+                stack.append(child)
+        return out
+
     def fetch_assignments(self, progress=None) -> list[Assignment]:
-        """Phase 3：Playwright 打开小雅作业页抓取。当前未实现，返回空。"""
+        courses = self.fetch_courses()
+        total = len(courses)
+        result: list[Assignment] = []
+
+        with self._client() as cli:
+            for idx, course in enumerate(courses):
+                if progress:
+                    progress(idx, total, course["name"])
+                try:
+                    nodes = self._node_names(cli, course["id"])
+                    r = cli.get(
+                        f"{API}/jx-stat/group/task/queryTaskNotices",
+                        params={"group_id": course["id"], "role": 1},
+                    )
+                    data = (r.json() or {}).get("data") or {}
+                except (httpx.HTTPError, ValueError):
+                    continue
+
+                for t in (data.get("teacher_tasks") or []) + (data.get("student_tasks") or []):
+                    node_id = str(t.get("node_id") or "")
+                    title = nodes.get(node_id) or f"课程任务（{_type_name(t.get('task_type'))}）"
+                    result.append(
+                        Assignment(
+                            platform="xiaoya",
+                            course_name=course["name"],
+                            title=title,
+                            ddl=_to_iso(t.get("end_time")),
+                            status=_status_of(t),
+                            url=f"https://xiaoya.fifedu.com/jx-stem/mycourse/{course['id']}/task",
+                            source_msg_id=str(t.get("task_id") or t.get("id") or ""),
+                            attachments=[],
+                        )
+                    )
+
         if progress:
-            progress(1, 1, "小雅抓取尚未实现")
-        return []
+            progress(total, total, "")
+        return result
+
+
+def _status_of(task: dict) -> str:
+    finish = task.get("finish")
+    if finish in (1, 2):  # 1/2 均表示已提交（实测 2=已提交并批阅）
+        return "submitted"
+    end = _to_iso(task.get("end_time"))
+    if end:
+        try:
+            if datetime.fromisoformat(end) < datetime.now(CN):
+                return "expired"
+        except ValueError:
+            pass
+    return "pending"
+
+
+def _type_name(t) -> str:
+    return {1: "测验", 2: "作业", 3: "讨论", 4: "考试"}.get(t, "任务")
+
+
+def _to_iso(value) -> str | None:
+    if not value:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt.astimezone(CN).isoformat(timespec="seconds")

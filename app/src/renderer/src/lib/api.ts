@@ -233,6 +233,14 @@ export const xiaoyaLogin = (
     body: JSON.stringify({ username, password })
   })
 
+export const xiaoyaRefresh = (): Promise<{
+  ok: boolean
+  created?: number
+  updated?: number
+  total?: number
+  message?: string
+}> => request('/adapters/xiaoya/refresh', { method: 'POST' })
+
 export const xiaoyaImportCookie = (
   cookie: string
 ): Promise<{ ok: boolean; code: string; message: string }> =>

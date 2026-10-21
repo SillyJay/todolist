@@ -20,6 +20,7 @@ import {
   chaoxingRefreshSchedule,
   refreshStatus,
   xiaoyaImportCookie,
+  xiaoyaRefresh,
   type AdaptersStatus,
   type RefreshStatus
 } from '../lib/api'
@@ -400,8 +401,33 @@ function XiaoyaPanel({
       </button>
 
       {loggedIn && (
-        <div className="flex items-center gap-2 text-[12px] text-[#7ee2b8]">
-          <Check size={13} /> Cookie 已配置
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2 text-[12px] text-[#7ee2b8]">
+            <Check size={13} /> 已登录
+          </div>
+          <button
+            onClick={async () => {
+              setBusy(true)
+              setMsg(null)
+              try {
+                const r = await xiaoyaRefresh()
+                setMsg({
+                  ok: !!r.ok,
+                  text: r.ok
+                    ? `同步完成：新增 ${r.created} 条，更新 ${r.updated} 条（共 ${r.total} 条任务）`
+                    : r.message || '同步失败'
+                })
+                if (r.ok) await onChanged()
+              } finally {
+                setBusy(false)
+              }
+            }}
+            disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff] disabled:opacity-50"
+          >
+            {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            同步作业（约 3 秒）
+          </button>
         </div>
       )}
 
