@@ -9,9 +9,13 @@ import { initLogger, log } from './logger'
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
 
-// 虚拟显示适配器 / 远程桌面环境下 GPU 初始化可能直接崩溃，强制软件渲染
-// （不影响功能，仅牺牲部分动画流畅度）
+// 虚拟显示适配器 / 远程桌面环境下 GPU 子进程可能无法启动（error_code=18），
+// 表现为进程静默退出。这里彻底关闭 GPU 并把渲染留在主进程内。
 app.disableHardwareAcceleration()
+app.commandLine.appendSwitch('disable-gpu')
+app.commandLine.appendSwitch('disable-gpu-compositing')
+app.commandLine.appendSwitch('in-process-gpu')
+app.commandLine.appendSwitch('disable-software-rasterizer')
 
 // 日志尽量早初始化，捕获「启动即崩」的场景（写入 %APPDATA%/CampusAssistant/main.log）
 const LOG_FILE = initLogger()
