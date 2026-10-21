@@ -255,6 +255,8 @@ export interface WeChatStatus {
     installed: boolean
     path: string | null
     wechat_running: boolean
+    initialized: boolean
+    version: string
     cli_ok: boolean
     cli_message: string
   }
@@ -284,6 +286,9 @@ export const wechatInstall = (
     method: 'POST',
     body: JSON.stringify({ source, sha256 })
   })
+
+export const wechatInit = (): Promise<{ ok: boolean; message: string; output?: string }> =>
+  request('/adapters/wechat/init', { method: 'POST' })
 
 export const wechatUninstall = (): Promise<{ ok: boolean; removed: string[] }> =>
   request('/adapters/wechat/uninstall', { method: 'POST' })

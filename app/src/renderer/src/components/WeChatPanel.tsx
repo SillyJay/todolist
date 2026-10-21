@@ -17,6 +17,7 @@ import {
   wechatSimulate,
   wechatInstall,
   wechatUninstall,
+  wechatInit,
   type WeChatStatus
 } from '../lib/api'
 
@@ -28,6 +29,7 @@ export default function WeChatPanel(): React.JSX.Element {
   const [busy, setBusy] = useState(false)
   const [testText, setTestText] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
+  const [initOutput, setInitOutput] = useState('')
   const [testResult, setTestResult] = useState('')
   const timer = useRef<number | null>(null)
 
@@ -97,7 +99,16 @@ export default function WeChatPanel(): React.JSX.Element {
     <div className="space-y-3">
       {/* 环境检测 */}
       <div className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-2.5 space-y-1.5">
-        <EnvRow ok={!!env?.installed} label="wechat-cli" detail={env?.path || '未安装'} />
+        <EnvRow
+          ok={!!env?.installed}
+          label="wechat-cli"
+          detail={env?.installed ? `${env.version || '已安装'} · ${env.path}` : '未安装'}
+        />
+        <EnvRow
+          ok={!!env?.initialized}
+          label="数据库密钥"
+          detail={env?.initialized ? '已提取' : '未初始化（点下方「初始化」）'}
+        />
         <EnvRow ok={!!env?.wechat_running} label="微信进程" detail={env?.wechat_running ? '已运行' : '未启动'} />
         <EnvRow
           ok={listener?.state === 'running'}
@@ -230,6 +241,25 @@ export default function WeChatPanel(): React.JSX.Element {
           </button>
         )}
         <button
+          onClick={async () => {
+            setBusy(true)
+            setMsg('初始化中（需要微信在运行，可能需要管理员权限）…')
+            try {
+              const r = await wechatInit()
+              setMsg(r.message)
+              if (r.output) setInitOutput(r.output)
+              await reload()
+            } finally {
+              setBusy(false)
+            }
+          }}
+          disabled={busy || !env?.wechat_running}
+          className="px-2.5 py-1.5 rounded-md bg-[#242430] text-[11.5px] text-[#d0d0da] disabled:opacity-40"
+          title="从微信进程内存提取数据库密钥，只需执行一次"
+        >
+          初始化
+        </button>
+        <button
           onClick={() => void reload()}
           className="px-2.5 py-1.5 rounded-md border border-[#2e2e38] text-[11.5px] text-[#8a8a98] hover:text-[#e0e0e8]"
         >
@@ -243,7 +273,12 @@ export default function WeChatPanel(): React.JSX.Element {
           <span className="break-all">{listener.last_error}</span>
         </div>
       )}
-      {msg && <div className="text-[11.5px] text-[#7ee2b8]">{msg}</div>}
+      {msg && <div className="text-[11.5px] text-[#7ee2b8] break-all">{msg}</div>}
+      {initOutput && (
+        <pre className="max-h-28 overflow-y-auto rounded-md bg-[#141418] border border-[#26262f] p-2 text-[10.5px] text-[#8a8a98] whitespace-pre-wrap break-all">
+          {initOutput}
+        </pre>
+      )}
 
       {/* 最近消息 */}
       {!!listener?.recent?.length && (

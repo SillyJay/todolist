@@ -438,6 +438,14 @@ def wechat_start(db: Session = Depends(get_db)):
     return wechat.start(groups, on_message)
 
 
+@router.post("/wechat/init")
+def wechat_init():
+    """执行 wechat-cli init 提取数据库密钥（需微信运行 + 管理员权限）。"""
+    from adapters.wechat_listener import run_init
+
+    return run_init()
+
+
 @router.post("/wechat/stop")
 def wechat_stop():
     return wechat.stop()
