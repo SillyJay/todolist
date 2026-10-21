@@ -85,6 +85,28 @@ def schedule_of_date(date: str | None = None, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/schedule/all")
+def schedule_all(db: Session = Depends(get_db)):
+    """整学期课表（周视图用）：一次返回全部，前端按 weekday 分组。"""
+    rows = db.query(CourseSchedule).all()
+    rows.sort(key=lambda r: ((r.weekday or 0), r.start_time or ""))
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "weekday": r.weekday,
+                "course_name": r.course_name,
+                "course_abbr": r.course_abbr,
+                "start_time": r.start_time,
+                "end_time": r.end_time,
+                "location": r.location,
+                "weeks": r.weeks,
+            }
+            for r in rows
+        ]
+    }
+
+
 @router.get("/calendar/export-dir")
 def export_dir_info():
     """导出目录信息，便于前端展示与用户确认（规格 §13.8）。"""

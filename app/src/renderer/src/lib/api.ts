@@ -152,6 +152,12 @@ export interface CourseSlot {
 export const scheduleOf = (date: string): Promise<{ date: string; items: CourseSlot[] }> =>
   request(`/schedule?date=${date}`)
 
+export interface WeekCourse extends CourseSlot {
+  weekday: number
+}
+
+export const scheduleAll = (): Promise<{ items: WeekCourse[] }> => request('/schedule/all')
+
 export const exportDir = (): Promise<{ dir: string; exists: boolean }> =>
   request('/calendar/export-dir')
 

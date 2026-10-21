@@ -17,11 +17,13 @@ import {
   updatePlan,
   deletePlan,
   scheduleOf,
+  scheduleAll,
   listTasks,
   exportCalendar,
   type DayInfo,
   type DailyPlan,
   type CourseSlot,
+  type WeekCourse,
   type Task
 } from '../lib/api'
 
@@ -77,7 +79,7 @@ const textToMin = (t: string): number => {
   return (h || 0) * 60 + (m || 0)
 }
 
-type ViewMode = 'month' | 'list'
+type ViewMode = 'month' | 'week' | 'list'
 
 function CalendarPage(): React.JSX.Element {
   const today = useMemo(() => new Date(), [])
@@ -88,6 +90,7 @@ function CalendarPage(): React.JSX.Element {
   const [tasks, setTasks] = useState<Task[]>([])
   const [plans, setPlans] = useState<DailyPlan[]>([])
   const [courses, setCourses] = useState<CourseSlot[]>([])
+  const [coursesAll, setCoursesAll] = useState<WeekCourse[]>([])
   const [toast, setToast] = useState('')
   const [formOpen, setFormOpen] = useState(false)
 
@@ -111,6 +114,9 @@ function CalendarPage(): React.JSX.Element {
     void reloadInfos()
     void reloadPlans()
     void listTasks({}).then((r) => setTasks(r.items))
+    void scheduleAll()
+      .then((r) => setCoursesAll(r.items))
+      .catch(() => setCoursesAll([]))
   }, [reloadInfos, reloadPlans])
 
   useEffect(() => {
@@ -164,6 +170,11 @@ function CalendarPage(): React.JSX.Element {
     return null
   }, [today, infos])
 
+  const weekStart = useMemo(
+    () => addDays(cursor, -((cursor.getDay() + 6) % 7)),
+    [cursor]
+  )
+
   const cells = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
     const gridStart = addDays(first, -((first.getDay() + 6) % 7))
@@ -212,6 +223,7 @@ function CalendarPage(): React.JSX.Element {
             {(
               [
                 ['month', '月'],
+                ['week', '周'],
                 ['list', '列表']
               ] as [ViewMode, string][]
             ).map(([k, label]) => (
@@ -228,16 +240,26 @@ function CalendarPage(): React.JSX.Element {
           </div>
 
           <button
-            onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}
+            onClick={() =>
+              view === 'week'
+                ? setCursor(addDays(cursor, -7))
+                : setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
+            }
             className="p-1 rounded text-[#8a8a98] hover:text-[#e0e0e8] hover:bg-[#1c1c22]"
           >
             <ChevronLeft size={15} />
           </button>
-          <span className="text-[13.5px] text-[#e0e0e8] min-w-[92px] text-center">
-            {cursor.getFullYear()} 年 {cursor.getMonth() + 1} 月
+          <span className="text-[13.5px] text-[#e0e0e8] min-w-[120px] text-center">
+            {view === 'week'
+              ? `${weekStart.getMonth() + 1}/${weekStart.getDate()} – ${addDays(weekStart, 6).getMonth() + 1}/${addDays(weekStart, 6).getDate()}`
+              : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`}
           </span>
           <button
-            onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))}
+            onClick={() =>
+              view === 'week'
+                ? setCursor(addDays(cursor, 7))
+                : setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
+            }
             className="p-1 rounded text-[#8a8a98] hover:text-[#e0e0e8] hover:bg-[#1c1c22]"
           >
             <ChevronRight size={15} />
@@ -361,6 +383,17 @@ function CalendarPage(): React.JSX.Element {
               )
             })}
           </div>
+        ) : view === 'week' ? (
+          <WeekView
+            weekStart={weekStart}
+            today={today}
+            infos={infos}
+            plansByDate={plansByDate}
+            tasksByDate={tasksByDate}
+            courses={coursesAll}
+            selected={selected}
+            onSelect={setSelected}
+          />
         ) : (
           <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[#26262f] bg-[#16161a] divide-y divide-[#22222a]">
             {Array.from({ length: 42 }, (_, i) => addDays(cells[0], i))
@@ -710,6 +743,215 @@ function PlanForm({
       >
         取消
       </button>
+    </div>
+  )
+}
+
+
+/** 周视图（规格 §13.1）：7 列 × 24 小时时间网格 */
+function WeekView({
+  weekStart,
+  today,
+  infos,
+  plansByDate,
+  tasksByDate,
+  courses,
+  selected,
+  onSelect
+}: {
+  weekStart: Date
+  today: Date
+  infos: Record<string, DayInfo>
+  plansByDate: Record<string, DailyPlan[]>
+  tasksByDate: Record<string, Task[]>
+  courses: WeekCourse[]
+  selected: string
+  onSelect: (d: string) => void
+}): React.JSX.Element {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 6 * HOUR_H - 12
+  }, [weekStart])
+
+  const coursesByDay = useMemo(() => {
+    const m: Record<number, WeekCourse[]> = {}
+    for (const c of courses) (m[c.weekday] ||= []).push(c)
+    return m
+  }, [courses])
+
+  const blocksByDay = useMemo(() => {
+    const out: Record<string, { top: number; height: number; left: string; width: string; label: string; sub: string; color: string; done?: boolean }[]> = {}
+
+    for (const d of days) {
+      const key = ymd(d)
+      const raw: { start: number; end: number; label: string; sub: string; color: string; done?: boolean }[] = []
+
+      for (const p of plansByDate[key] || []) {
+        const q = qOf(p.quadrant)
+        raw.push({
+          start: p.start_min,
+          end: p.end_min,
+          label: p.title,
+          sub: `${minToText(p.start_min)}–${minToText(p.end_min)}`,
+          color: q.color,
+          done: !!p.done
+        })
+      }
+      for (const c of coursesByDay[d.getDay() === 0 ? 7 : d.getDay()] || []) {
+        if (!c.start_time || !c.end_time) continue
+        const st = textToMin(c.start_time)
+        const en = textToMin(c.end_time)
+        raw.push({
+          start: st,
+          end: en,
+          label: c.course_abbr || c.course_name || '课程',
+          sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
+          color: '#3f6fa8'
+        })
+      }
+
+      raw.sort((a, b) => a.start - b.start)
+      const laneEnds: number[] = []
+      const placed = raw.map((it) => {
+        let lane = laneEnds.findIndex((end) => end <= it.start)
+        if (lane === -1) {
+          lane = laneEnds.length
+          laneEnds.push(it.end)
+        } else {
+          laneEnds[lane] = it.end
+        }
+        return { ...it, lane }
+      })
+      const total = Math.max(1, laneEnds.length)
+      out[key] = placed.map((it) => ({
+        top: (it.start / 60) * HOUR_H,
+        height: Math.max(14, ((it.end - it.start) / 60) * HOUR_H - 1),
+        left: `calc(${(it.lane * 100) / total}% + 1px)`,
+        width: `calc(${100 / total}% - 2px)`,
+        label: it.label,
+        sub: it.sub,
+        color: it.color,
+        done: it.done
+      }))
+    }
+    return out
+  }, [days, plansByDate, coursesByDay])
+
+  const nowTop = ((today.getHours() * 60 + today.getMinutes()) / 60) * HOUR_H
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-[#26262f] bg-[#16161a] overflow-hidden">
+      {/* 表头 */}
+      <div className="flex shrink-0 border-b border-[#26262f] bg-[#131317]">
+        <div className="w-10 shrink-0" />
+        {days.map((d) => {
+          const key = ymd(d)
+          const info = infos[key]
+          const isToday = key === ymd(today)
+          const isSel = key === selected
+          const holiday = info?.is_holiday
+          return (
+            <button
+              key={key}
+              onClick={() => onSelect(key)}
+              className={`flex-1 min-w-0 px-1 py-1 text-center border-l border-[#22222a] transition-colors ${
+                isSel ? 'bg-[#1e2432]' : holiday ? 'bg-[#1f1a1c] hover:bg-[#25202a]' : 'hover:bg-[#1c1c22]'
+              }`}
+            >
+              <div className={`text-[10.5px] ${isToday ? 'text-[#7db4ff]' : 'text-[#9a9aa8]'}`}>
+                周{WEEK_CN[(d.getDay() + 6) % 7]}
+              </div>
+              <div className={`text-[13px] ${isToday ? 'text-white' : 'text-[#d0d0da]'}`}>
+                {d.getDate()}
+              </div>
+              <div className="text-[9px] text-[#5c5c6a] truncate">
+                {info?.festivals?.[0] || info?.lunar}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* 时间网格 */}
+      <div ref={scrollRef} className="flex-1 overflow-y-auto">
+        <div className="relative flex" style={{ height: 24 * HOUR_H }}>
+          <div className="w-10 shrink-0 relative">
+            {Array.from({ length: 24 }, (_, h) => (
+              <div
+                key={h}
+                className="absolute left-0 right-0 text-right pr-1 text-[9px] text-[#4a4a58]"
+                style={{ top: h * HOUR_H + 1 }}
+              >
+                {pad(h)}
+              </div>
+            ))}
+          </div>
+
+          {days.map((d) => {
+            const key = ymd(d)
+            const isToday = key === ymd(today)
+            const dayTasks = tasksByDate[key] || []
+            return (
+              <div key={key} className="relative flex-1 min-w-0 border-l border-[#22222a]">
+                {Array.from({ length: 24 }, (_, h) => (
+                  <div
+                    key={h}
+                    className="absolute left-0 right-0 border-t border-[#1e1e26]"
+                    style={{ top: h * HOUR_H }}
+                  />
+                ))}
+
+                {isToday && (
+                  <div
+                    className="absolute left-0 right-0 border-t border-[#ef4444] z-20"
+                    style={{ top: nowTop }}
+                  >
+                    <span className="absolute -left-0.5 -top-[3px] w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                  </div>
+                )}
+
+                {dayTasks.map((t, i) => {
+                  if (!t.ddl) return null
+                  const m = textToMin(t.ddl.slice(11, 16))
+                  return (
+                    <div
+                      key={`task-${t.id}`}
+                      className="absolute left-0.5 right-0.5 z-10 text-[9px] px-1 rounded bg-[#2a1f2a] text-[#e0b0d0] truncate border-l-2 border-[#e879a6]"
+                      style={{ top: (m / 60) * HOUR_H + i * 12 }}
+                      title={`${t.title} 截止 ${t.ddl.slice(11, 16)}`}
+                    >
+                      {t.ddl.slice(11, 16)} {t.title}
+                    </div>
+                  )
+                })}
+
+                {(blocksByDay[key] || []).map((b, i) => (
+                  <div
+                    key={i}
+                    className="absolute rounded px-1 py-0.5 text-[9.5px] leading-tight overflow-hidden"
+                    style={{
+                      top: b.top,
+                      height: b.height,
+                      left: b.left,
+                      width: b.width,
+                      background: `${b.color}30`,
+                      borderLeft: `2px solid ${b.color}`,
+                      color: b.done ? '#7a7a88' : '#dcdce6',
+                      textDecoration: b.done ? 'line-through' : 'none'
+                    }}
+                    title={`${b.label} ${b.sub}`}
+                  >
+                    <div className="truncate">{b.label}</div>
+                    {b.height > 30 && <div className="text-[8.5px] opacity-70 truncate">{b.sub}</div>}
+                  </div>
+                ))}
+              </div>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
