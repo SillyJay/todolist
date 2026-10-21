@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react'
 import MainLayout from './layouts/MainLayout'
+import LoginDialog from './components/LoginDialog'
 import type { PageKey } from './lib/ui'
 import { getSettings, putSettings } from './lib/api'
 
 function App(): React.JSX.Element {
   const [page, setPage] = useState<PageKey>('tasks')
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [loginOpen, setLoginOpen] = useState(false)
 
   // 读取主题设置
   useEffect(() => {
@@ -26,12 +28,16 @@ function App(): React.JSX.Element {
   }, [theme])
 
   return (
-    <MainLayout
-      page={page}
-      onPageChange={setPage}
-      theme={theme}
-      onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
-    />
+    <>
+      <MainLayout
+        page={page}
+        onPageChange={setPage}
+        theme={theme}
+        onToggleTheme={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
+        onOpenLogin={() => setLoginOpen(true)}
+      />
+      {loginOpen && <LoginDialog onClose={() => setLoginOpen(false)} />}
+    </>
   )
 }
 

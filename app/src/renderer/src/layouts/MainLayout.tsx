@@ -16,6 +16,7 @@ interface Props {
   onPageChange: (p: PageKey) => void
   theme: 'dark' | 'light'
   onToggleTheme: () => void
+  onOpenLogin: () => void
 }
 
 const TITLES: Record<PageKey, string> = {
@@ -26,7 +27,7 @@ const TITLES: Record<PageKey, string> = {
   settings: '设置'
 }
 
-function MainLayout({ page, onPageChange, theme, onToggleTheme }: Props): React.JSX.Element {
+function MainLayout({ page, onPageChange, theme, onToggleTheme, onOpenLogin }: Props): React.JSX.Element {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [aiPanelVisible, setAiPanelVisible] = useState(true)
 
@@ -38,6 +39,7 @@ function MainLayout({ page, onPageChange, theme, onToggleTheme }: Props): React.
         onToggleTheme={onToggleTheme}
         aiPanelVisible={aiPanelVisible}
         onToggleAiPanel={() => setAiPanelVisible((v) => !v)}
+        onOpenLogin={onOpenLogin}
       />
 
       <PanelGroup direction="horizontal" className="flex-1 min-h-0">

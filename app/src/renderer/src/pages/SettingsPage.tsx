@@ -6,7 +6,8 @@ import {
   adaptersStatus,
   chaoxingLogin,
   chaoxingImportCookie,
-  chaoxingRefresh
+  chaoxingRefresh,
+  refreshStatus
 } from '../lib/api'
 
 /** 设置页（规格 §7.5）：Phase 1 先做 AI Key / 工作区 / 轮询间隔 / 主题。 */
@@ -195,11 +196,25 @@ function ChaoxingSection(): React.JSX.Element {
     setMsg('')
     try {
       const r = await chaoxingRefresh()
-      setMsg(
-        r.ok
-          ? `刷新完成：新增 ${r.created} 条，更新 ${r.updated} 条（共 ${r.total} 条作业）`
-          : r.message || '刷新失败'
-      )
+      if (!r.ok) {
+        setMsg(r.message || '刷新失败')
+        return
+      }
+      setMsg('已开始后台同步（约 2 分钟），可关闭此页；完成后任务列表会自动更新')
+      // 轮询到结束，避免用户以为没反应
+      for (let i = 0; i < 120; i++) {
+        await new Promise((res) => setTimeout(res, 2000))
+        const s = await refreshStatus()
+        if (!s.running) {
+          setMsg(
+            s.error
+              ? `同步失败：${s.error}`
+              : `同步完成：新增 ${s.created} 条，更新 ${s.updated} 条`
+          )
+          break
+        }
+        setMsg(`同步中：${s.done}/${s.total} 门课 · ${s.current}`)
+      }
     } catch (e) {
       setMsg(String(e))
     } finally {

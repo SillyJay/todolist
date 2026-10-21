@@ -1,4 +1,4 @@
-import { Moon, Sun, PanelRight } from 'lucide-react'
+import { Moon, Sun, PanelRight, UserRound } from 'lucide-react'
 
 interface Props {
   title: string
@@ -6,6 +6,7 @@ interface Props {
   onToggleTheme: () => void
   aiPanelVisible: boolean
   onToggleAiPanel: () => void
+  onOpenLogin: () => void
 }
 
 function TopBar({
@@ -13,7 +14,8 @@ function TopBar({
   theme,
   onToggleTheme,
   aiPanelVisible,
-  onToggleAiPanel
+  onToggleAiPanel,
+  onOpenLogin
 }: Props): React.JSX.Element {
   return (
     <header className="h-11 shrink-0 flex items-center justify-between px-4 border-b border-[#24242c] bg-[#131317]">
@@ -25,7 +27,12 @@ function TopBar({
       </div>
 
       <div className="flex items-center gap-1">
-        <StatusDot label="同步" ok />
+        <button
+          onClick={onOpenLogin}
+          className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-[#9a9aa8] hover:text-[#e0e0e8] hover:bg-[#1c1c22]"
+        >
+          <UserRound size={13} /> 账号
+        </button>
         <StatusDot label="AI" ok={false} />
         <IconBtn onClick={onToggleAiPanel} active={aiPanelVisible} title="AI 面板">
           <PanelRight size={16} strokeWidth={1.8} />

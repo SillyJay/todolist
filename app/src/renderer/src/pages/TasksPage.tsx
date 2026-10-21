@@ -28,6 +28,7 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
   const [adding, setAdding] = useState(false)
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState('')
+  const [onlyDdl, setOnlyDdl] = useState(false)
 
   const refresh = async (): Promise<void> => {
     try {
@@ -46,6 +47,11 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
     void refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter])
+
+  const visibleTasks = useMemo(
+    () => (onlyDdl ? tasks.filter((t) => t.ddl) : tasks),
+    [tasks, onlyDdl]
+  )
 
   const stats = useMemo(() => {
     const pending = tasks.filter((t) => t.status === 'pending').length
@@ -135,6 +141,17 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
         </div>
 
         <button
+          onClick={() => setOnlyDdl((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] border transition-colors ${
+            onlyDdl
+              ? 'bg-[#1e2432] border-[#3a4a68] text-[#7db4ff]'
+              : 'bg-[#1c1c22] border-[#2e2e38] text-[#8a8a98] hover:text-[#e0e0e8]'
+          }`}
+          title="过滤掉老师没有设置截止时间的作业"
+        >
+          仅有截止时间
+        </button>
+        <button
           onClick={handleExport}
           disabled={exporting}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] bg-[#1c1c22] border border-[#2e2e38] text-[#b0b0be] hover:border-[#4f8cff] hover:text-[#e8e8ec] transition-colors disabled:opacity-50"
@@ -209,7 +226,7 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
         </div>
       ) : (
         <div className="space-y-2">
-          {tasks.map((t) => (
+          {visibleTasks.map((t) => (
             <TaskCard
               key={t.id}
               task={t}
@@ -223,7 +240,7 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
       )}
 
       <div className="mt-6 text-[11px] text-[#4a4a58]">
-        当前列表 {tasks.length} 条 · 待办 {stats.pending} 条 · 3 天内 {stats.soon} 条
+        当前列表 {visibleTasks.length} 条 · 待办 {stats.pending} 条 · 3 天内 {stats.soon} 条
       </div>
     </div>
   )

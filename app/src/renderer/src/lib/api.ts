@@ -186,14 +186,42 @@ export const chaoxingImportCookie = (
     body: JSON.stringify({ cookie })
   })
 
+export interface RefreshStatus {
+  running: boolean
+  done: number
+  total: number
+  current: string
+  created: number
+  updated: number
+  error: string
+}
+
 export const chaoxingRefresh = (): Promise<{
   ok: boolean
-  created?: number
-  updated?: number
-  total?: number
+  started?: boolean
   code?: string
   message?: string
 }> => request('/adapters/chaoxing/refresh', { method: 'POST' })
+
+export const refreshStatus = (): Promise<RefreshStatus> =>
+  request('/adapters/chaoxing/refresh/status')
+
+export const xiaoyaLogin = (
+  username: string,
+  password: string
+): Promise<{ ok: boolean; code: string; message: string }> =>
+  request('/adapters/xiaoya/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  })
+
+export const xiaoyaImportCookie = (
+  cookie: string
+): Promise<{ ok: boolean; code: string; message: string }> =>
+  request('/adapters/xiaoya/import-cookie', {
+    method: 'POST',
+    body: JSON.stringify({ cookie })
+  })
 
 // ---- 设置（规格 §7.5）----
 export const getSettings = (): Promise<Record<string, string>> => request('/settings')

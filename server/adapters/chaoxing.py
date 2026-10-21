@@ -9,7 +9,9 @@
 """
 import json
 import os
+import re
 import time
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -145,17 +147,62 @@ class ChaoxingAdapter(BaseAdapter):
                 )
         return courses
 
-    def fetch_assignments(self) -> list[Assignment]:
-        """拉取全部课程的作业列表（防御式解析，字段需真实账号联调确认）。"""
+    def fetch_assignments(self, progress: Any = None) -> list[Assignment]:
+        """拉取全部课程的作业列表。
+
+        实测结论（2026-10）：作业模块是独立页面 `mooc1.chaoxing.com/mooc2/work/list`，
+        需要 cpi + stuenc（由课程页 JS 生成），纯 HTTP 会被 3004 拦掉。
+        因此走 Playwright + 本机 Edge 内核，点击「作业」标签后读 iframe 内容。
+        progress(done, total, course_name) 用于回传进度。
+        """
+        courses = [c for c in self.fetch_courses() if c.get("course_id") and c.get("class_id")]
+        total = len(courses)
+
+        from playwright.sync_api import sync_playwright
+
         result: list[Assignment] = []
-        for course in self.fetch_courses():
-            if not course.get("course_id") or not course.get("class_id"):
-                continue
+        cookies = self.load_cookies()
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(channel="msedge", headless=True, args=["--no-sandbox"])
+            ctx = browser.new_context()
+            ctx.add_cookies(
+                [{"name": k, "value": v, "domain": ".chaoxing.com", "path": "/"} for k, v in cookies.items()]
+            )
+            page = ctx.new_page()
             try:
-                result.extend(self._fetch_course_works(course))
-            except (httpx.HTTPError, ValueError):
-                continue
+                page.goto("https://i.chaoxing.com", wait_until="domcontentloaded", timeout=45000)
+                for idx, course in enumerate(courses):
+                    if progress:
+                        progress(idx, total, course["name"])
+                    try:
+                        result.extend(self._fetch_course_works_browser(page, course))
+                    except Exception:  # noqa: BLE001 - 单课失败不影响整体
+                        continue
+            finally:
+                browser.close()
+
+        if progress:
+            progress(total, total, "")
         return result
+
+    def _fetch_course_works_browser(self, page: Any, course: dict) -> list[Assignment]:
+        """在浏览器里打开课程 → 点作业 → 解析 iframe 列表。"""
+        page.goto(
+            "https://mooc1.chaoxing.com/mooc-ans/visit/stucoursemiddle"
+            f"?courseid={course['course_id']}&clazzid={course['class_id']}&vc=1&ismooc2=1&v=2",
+            wait_until="domcontentloaded",
+            timeout=40000,
+        )
+        page.wait_for_timeout(1200)
+        page.get_by_text("作业", exact=True).first.click(timeout=6000)
+        page.wait_for_timeout(2200)
+
+        frames = [f for f in page.frames if "work/list" in f.url]
+        if not frames:
+            return []
+        html = frames[0].content()
+        return _parse_work_list(html, course["name"])
 
     def _fetch_course_works(self, course: dict) -> list[Assignment]:
         out: list[Assignment] = []
@@ -193,6 +240,78 @@ class ChaoxingAdapter(BaseAdapter):
                 )
             )
         return out
+
+
+
+
+def _parse_work_list(html: str, course_name: str) -> list[Assignment]:
+    """解析作业列表 iframe 的 HTML（2026-10 实测结构）。
+
+    <li onclick="goTask(this);" data="<url>" aria-label="标题 ; 状态">
+      <p class="overHidden2 fl">标题</p>
+      <p class="status fl">未交</p>
+      <div class="time notOver">剩余220小时20分钟</div>
+    </li>
+    """
+    out: list[Assignment] = []
+    blocks = re.findall(r'<li[^>]*onclick="goTask\(this\);"[^>]*>(.*?)</li>', html, re.S)
+    urls = re.findall(r'<li[^>]*onclick="goTask\(this\);"[^>]*data="([^"]+)"', html)
+
+    for html_block, url in zip(blocks, urls):
+        clean_url = url.replace("&amp;", "&")
+        title_m = re.search(r'<p class="overHidden2[^"]*"[^>]*>(.*?)</p>', html_block, re.S)
+        status_m = re.search(r'<p class="status[^"]*"[^>]*>(.*?)</p>', html_block, re.S)
+        time_m = re.search(r'<div class="time[^"]*"[^>]*>(.*?)</div>', html_block, re.S)
+
+        title = _strip_tags(title_m.group(1)) if title_m else "未命名作业"
+        status_text = _strip_tags(status_m.group(1)) if status_m else ""
+        time_text = _strip_tags(time_m.group(1)) if time_m else ""
+
+        work_id = ""
+        q = re.search(r"[?&]workId=(\d+)", clean_url)
+        if q:
+            work_id = q.group(1)
+
+        out.append(
+            Assignment(
+                platform="chaoxing",
+                course_name=course_name,
+                title=title,
+                ddl=_ddl_from_remaining(time_text),
+                status=(
+                    "submitted"
+                    if ("已完成" in status_text or "已交" in status_text)
+                    else "expired"
+                    if ("过期" in time_text or "已结束" in time_text or "过期" in status_text)
+                    else "pending"
+                ),
+                url=clean_url,
+                source_msg_id=work_id or title,
+                attachments=[],
+            )
+        )
+    return out
+
+
+def _strip_tags(s: str) -> str:
+    return re.sub(r"<[^>]+>", "", s or "").replace("&nbsp;", " ").strip()
+
+
+def _ddl_from_remaining(text: str) -> str | None:
+    """把「剩余220小时20分钟」换算成绝对时间（相对当前时刻）。"""
+    if not text:
+        return None
+    h = re.search(r"(\d+)\s*小时", text)
+    m = re.search(r"(\d+)\s*分钟", text)
+    d = re.search(r"(\d+)\s*天", text)
+    if not (h or m or d):
+        return None
+    delta = timedelta(
+        days=int(d.group(1)) if d else 0,
+        hours=int(h.group(1)) if h else 0,
+        minutes=int(m.group(1)) if m else 0,
+    )
+    return (datetime.now().astimezone() + delta).isoformat(timespec="seconds")
 
 
 def _to_iso(value: Any) -> str | None:
