@@ -8,12 +8,14 @@ from sqlalchemy.orm import Session
 
 from adapters.chaoxing import ChaoxingAdapter
 from adapters.xiaoya import XiaoyaAdapter
+from adapters.wechat_listener import WeChatListener, cli_status, message_to_task
 from db.database import get_db
 from db.models import CourseSchedule, Setting, Task
 
 router = APIRouter()
 chaoxing = ChaoxingAdapter()
 xiaoya = XiaoyaAdapter()
+wechat = WeChatListener()
 
 # 刷新任务状态（作业抓取要跑浏览器，耗时 1-3 分钟，因此异步 + 轮询进度）
 _refresh_state: dict = {
@@ -34,6 +36,17 @@ class ChaoxingLoginBody(BaseModel):
 
 class CookieBody(BaseModel):
     cookie: str
+
+
+class WeChatConfig(BaseModel):
+    groups: list[str] = []
+
+
+class WeChatSimulate(BaseModel):
+    text: str
+    group: str = "测试群"
+    sender: str = "测试老师"
+    msg_id: str | None = None
 
 
 def _now() -> str:
@@ -257,7 +270,7 @@ def adapters_status():
     return {
         "chaoxing": {"logged_in": chaoxing.has_session()},
         "xiaoya": {"logged_in": xiaoya.has_session()},
-        "wechat": {"state": "not_configured"},  # running / offline / not_configured
+        "wechat": {"state": wechat.status()["state"]},  # running / offline / not_configured
     }
 
 
@@ -322,12 +335,116 @@ def xiaoya_login(body: ChaoxingLoginBody):
     return xiaoya.login(body.username, body.password)
 
 
+@router.get("/wechat/status")
+def wechat_status(db: Session = Depends(get_db)):
+    """微信监听状态：CLI 安装情况 + 微信进程 + 监听器状态 + 配置的群。"""
+    cfg = db.get(Setting, "wechat_groups")
+    groups = [g for g in (cfg.value.split(",") if cfg and cfg.value else []) if g]
+    return {
+        "env": cli_status(),
+        "listener": wechat.status(),
+        "config_groups": groups,
+    }
+
+
+@router.put("/wechat/config")
+def wechat_config(body: WeChatConfig, db: Session = Depends(get_db)):
+    """保存要监听的群名列表（逗号分隔存 settings）。"""
+    value = ",".join(g.strip() for g in body.groups if g.strip())
+    _put_setting(db, "wechat_groups", value)
+    db.commit()
+    return {"ok": True, "groups": [g for g in value.split(",") if g]}
+
+
 @router.post("/wechat/start")
-def wechat_start():
-    # Phase 2 实现
-    return {"ok": False, "code": "NOT_IMPLEMENTED", "message": "微信群监听将在 Phase 2 提供"}
+def wechat_start(db: Session = Depends(get_db)):
+    cfg = db.get(Setting, "wechat_groups")
+    groups = [g for g in (cfg.value.split(",") if cfg and cfg.value else []) if g]
+
+    def on_message(msg: dict) -> None:
+        """命中关键词的消息 → 提取任务 → 入库（按消息 id 去重）。"""
+        from db.database import SessionLocal
+
+        draft = message_to_task(msg)
+        if not draft:
+            return
+        session = SessionLocal()
+        try:
+            exists = (
+                session.query(Task)
+                .filter(Task.platform == "wechat", Task.source_msg_id == draft["source_msg_id"])
+                .first()
+            )
+            if exists:
+                return
+            session.add(
+                Task(
+                    platform="wechat",
+                    course_name=draft.get("course_name"),
+                    course_abbr=(draft.get("course_name") or "")[:8] or None,
+                    title=draft["title"],
+                    ddl=draft.get("ddl"),
+                    status="pending",
+                    summary=draft.get("summary"),
+                    raw_text=draft.get("raw_text"),
+                    confidence=draft.get("confidence"),
+                    source_msg_id=draft["source_msg_id"],
+                    in_semester=1,
+                    created_at=_now(),
+                    updated_at=_now(),
+                )
+            )
+            session.commit()
+        finally:
+            session.close()
+
+    return wechat.start(groups, on_message)
 
 
 @router.post("/wechat/stop")
 def wechat_stop():
-    return {"ok": False, "code": "NOT_IMPLEMENTED", "message": "微信群监听将在 Phase 2 提供"}
+    return wechat.stop()
+
+
+@router.post("/wechat/simulate")
+def wechat_simulate(body: WeChatSimulate, db: Session = Depends(get_db)):
+    """调试用：不依赖 CLI，直接投递一条群消息，验证「过滤→提取→入库」链路。"""
+    from adapters.wechat_listener import _digest, _keyword_hit
+
+    msg = {
+        "group": body.group,
+        "sender": body.sender,
+        "text": body.text,
+        "msg_id": body.msg_id or _digest(body.group, body.sender, body.text),
+        "keyword_hit": _keyword_hit(body.text),
+        "time": _now(),
+    }
+    draft = message_to_task(msg)
+    if not draft:
+        return {"ok": False, "matched": False, "message": "未命中关键词或未识别为任务"}
+    exists = (
+        db.query(Task)
+        .filter(Task.platform == "wechat", Task.source_msg_id == draft["source_msg_id"])
+        .first()
+    )
+    if exists:
+        return {"ok": True, "matched": True, "created": False, "task_id": exists.id}
+    t = Task(
+        platform="wechat",
+        course_name=draft.get("course_name"),
+        course_abbr=(draft.get("course_name") or "")[:8] or None,
+        title=draft["title"],
+        ddl=draft.get("ddl"),
+        status="pending",
+        summary=draft.get("summary"),
+        raw_text=draft.get("raw_text"),
+        confidence=draft.get("confidence"),
+        source_msg_id=draft["source_msg_id"],
+        in_semester=1,
+        created_at=_now(),
+        updated_at=_now(),
+    )
+    db.add(t)
+    db.commit()
+    db.refresh(t)
+    return {"ok": True, "matched": True, "created": True, "task_id": t.id, "title": t.title, "ddl": t.ddl}

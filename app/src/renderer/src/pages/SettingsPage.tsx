@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Save, Check, Eye, EyeOff, FolderOpen, KeyRound, RefreshCw, LogIn, Cookie } from 'lucide-react'
+import WeChatPanel from '../components/WeChatPanel'
 import {
   getSettings,
   putSettings,
@@ -135,8 +136,11 @@ function SettingsPage(): React.JSX.Element {
         </div>
       </Section>
 
-      <Section title="微信监听" desc="wechat-cli 检测与群配置在 Phase 2 提供。">
-        <div className="text-[12px] text-[#5c5c6a]">当前状态：未配置</div>
+      <Section
+        title="微信监听"
+        desc="监听指定微信群，自动从「作业/截止/提交」类消息里提取任务。微信侧只读，不发消息。"
+      >
+        <WeChatPanel />
       </Section>
 
       <ChaoxingSection />

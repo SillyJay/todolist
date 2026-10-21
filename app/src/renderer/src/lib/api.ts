@@ -249,6 +249,46 @@ export const xiaoyaImportCookie = (
     body: JSON.stringify({ cookie })
   })
 
+// ---- 微信监听（规格 §5 模块 3）----
+export interface WeChatStatus {
+  env: {
+    installed: boolean
+    path: string | null
+    wechat_running: boolean
+    cli_ok: boolean
+    cli_message: string
+  }
+  listener: {
+    state: 'running' | 'offline' | 'not_configured'
+    groups: string[]
+    connected: boolean
+    received: number
+    last_error: string
+    recent: { group: string; sender: string; text: string; time: string; keyword_hit: boolean }[]
+  }
+  config_groups: string[]
+}
+
+export const wechatStatus = (): Promise<WeChatStatus> => request('/adapters/wechat/status')
+
+export const wechatSaveGroups = (groups: string[]): Promise<{ ok: boolean; groups: string[] }> =>
+  request('/adapters/wechat/config', { method: 'PUT', body: JSON.stringify({ groups }) })
+
+export const wechatStart = (): Promise<{ ok: boolean; code?: string; message: string }> =>
+  request('/adapters/wechat/start', { method: 'POST' })
+
+export const wechatStop = (): Promise<{ ok: boolean; message: string }> =>
+  request('/adapters/wechat/stop', { method: 'POST' })
+
+export const wechatSimulate = (
+  text: string,
+  group = '测试群'
+): Promise<{ ok: boolean; matched?: boolean; created?: boolean; title?: string; ddl?: string; message?: string }> =>
+  request('/adapters/wechat/simulate', {
+    method: 'POST',
+    body: JSON.stringify({ text, group })
+  })
+
 // ---- AI（规格 §7.3）----
 export interface AiStatus {
   configured: boolean
