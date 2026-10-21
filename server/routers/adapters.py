@@ -81,7 +81,7 @@ def chaoxing_refresh_schedule(db: Session = Depends(get_db)):
     if not chaoxing.has_session():
         return {"ok": False, "code": "NOT_LOGGED_IN", "message": "未登录学习通"}
     try:
-        data = chaoxing.fetch_schedule()
+        data = chaoxing.fetch_schedule_semester()
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "code": "FETCH_FAILED", "message": str(e)}
 
@@ -104,8 +104,23 @@ def chaoxing_refresh_schedule(db: Session = Depends(get_db)):
             )
         )
     _put_setting(db, "curriculum_week", str(data.get("current_week") or ""))
+    _put_setting(db, "curriculum_max_week", str(data.get("max_week") or ""))
+    if data.get("school_year"):
+        _put_setting(db, "curriculum_school_year", str(data.get("school_year")))
+    if data.get("semester"):
+        _put_setting(db, "curriculum_semester", str(data.get("semester")))
+    ts = data.get("first_week_date")
+    if ts:
+        from datetime import datetime as _dt
+
+        _put_setting(
+            db,
+            "curriculum_first_week_date",
+            _dt.fromtimestamp(ts / 1000).date().isoformat(),
+        )
     _put_setting(db, "schedule_synced_at", _now())
     db.commit()
+    _mark_semester(db)
     return {
         "ok": True,
         "count": len(lessons),
@@ -165,12 +180,51 @@ def _do_refresh() -> None:
             )
             created += 1
         db.commit()
+        _mark_semester(db)
         _refresh_state.update(created=created, updated=updated)
     except Exception as e:  # noqa: BLE001
         _refresh_state.update(error=f"{type(e).__name__}: {e}")
     finally:
         db.close()
         _refresh_state.update(running=False, current="")
+
+
+def _semester_label(db: Session) -> str:
+    """当前学期标签，如 2026-2027-1；缺数据时用系统时间推断。"""
+    y = db.get(Setting, "curriculum_school_year")
+    sem = db.get(Setting, "curriculum_semester")
+    if y and y.value:
+        try:
+            year = int(y.value)
+            term = int(sem.value) if sem and sem.value else 1
+            return f"{year}-{year + 1}-{term}"
+        except ValueError:
+            pass
+    now = datetime.now()
+    year = now.year if now.month >= 9 else now.year - 1
+    term = 1 if now.month >= 9 or now.month == 1 else 2
+    return f"{year}-{year + 1}-{term}"
+
+
+def _mark_semester(db: Session) -> int:
+    """按课表课程集合标记任务是否属于本学期（比日期推算更准）。"""
+    names = {
+        r.course_name
+        for r in db.query(CourseSchedule).filter(CourseSchedule.source == "chaoxing").all()
+        if r.course_name
+    }
+    if not names:
+        return 0
+    label = _semester_label(db)
+    changed = 0
+    for t in db.query(Task).filter(Task.platform == "chaoxing").all():
+        val = 1 if (t.course_name or "") in names else 0
+        if t.in_semester != val or t.semester != label:
+            t.in_semester = val
+            t.semester = label
+            changed += 1
+    db.commit()
+    return changed
 
 
 def _put_setting(db: Session, key: str, value: str) -> None:

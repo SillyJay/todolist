@@ -24,6 +24,8 @@ class Task(Base):
     ai_result = Column(Text)                       # AI 提取的 JSON
     summary = Column(Text)                         # AI 摘要（L2，缓存）
     confidence = Column(Float)                     # AI 置信度
+    in_semester = Column(Integer, default=1)        # 是否属于本学期课程
+    semester = Column(Text)                        # 如 2026-2027-1
     source_msg_id = Column(Text)                   # 来源消息去重键
     created_at = Column(Text)
     updated_at = Column(Text)

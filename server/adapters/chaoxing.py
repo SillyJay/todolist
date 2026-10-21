@@ -118,7 +118,82 @@ class ChaoxingAdapter(BaseAdapter):
         return {"ok": True, "code": "OK", "message": f"已导入 {len(cookies)} 个 Cookie 字段"}
 
 
+
     # ---------- 课表 ----------
+
+    def fetch_schedule_semester(self, progress: Any = None) -> dict:
+        """拉取整学期课表。
+
+        实测（2026-10）：`getMyLessons` 支持 `?week=N`，逐周请求即可拼出全学期；
+        单次约 0.3s，25 周总共 8 秒左右。
+        """
+        with httpx.Client(
+            timeout=25,
+            headers={
+                "User-Agent": UA,
+                "Referer": "https://kb.chaoxing.com/res/pc/curriculum/schedule.html",
+            },
+            cookies=self.load_cookies(),
+        ) as cli:
+            first = cli.get(SCHEDULE_URL, params={"week": 1})
+            data = first.json().get("data") or {}
+            cur = data.get("curriculum") or {}
+            cfg = cur.get("lessonTimeConfigArray") or []
+            current_week = int(cur.get("currentWeek") or 0)
+            max_week = int(cur.get("maxWeek") or cur.get("existMaxLength") or 18)
+            first_week_date = cur.get("firstWeekDateReal") or cur.get("firstWeekDate")
+
+            slots: dict[tuple, set[int]] = {}
+            for week in range(1, max_week + 1):
+                if progress:
+                    progress(week, max_week, f"第 {week} 周")
+                try:
+                    if week == 1:
+                        lessons = data.get("lessonArray") or []
+                    else:
+                        lessons = (
+                            cli.get(SCHEDULE_URL, params={"week": week})
+                            .json()
+                            .get("data", {})
+                            .get("lessonArray")
+                            or []
+                        )
+                except (httpx.HTTPError, ValueError):
+                    continue
+
+                # 同一周内先合并连续节次
+                blocks = _merge_sections(lessons)
+                for b in blocks:
+                    key = (b["weekday"], b["name"], b["location"], b["begin"], b["length"])
+                    slots.setdefault(key, set()).add(week)
+
+        merged = [
+            {
+                "weekday": k[0],
+                "name": k[1],
+                "location": k[2],
+                "begin": k[3],
+                "length": k[4],
+                "weeks": _compress_weeks(sorted(v)),
+                "teacher": "",
+            }
+            for k, v in slots.items()
+        ]
+
+        for m in merged:
+            start_i = m["begin"] - 1
+            end_i = m["begin"] + m["length"] - 2
+            m["start_time"] = cfg[start_i].split("-")[0] if 0 <= start_i < len(cfg) else None
+            m["end_time"] = cfg[end_i].split("-")[1] if 0 <= end_i < len(cfg) else None
+
+        return {
+            "current_week": current_week,
+            "max_week": max_week,
+            "first_week_date": first_week_date,
+            "school_year": cur.get("schoolYear"),
+            "semester": cur.get("semester"),
+            "lessons": merged,
+        }
 
     def fetch_schedule(self) -> dict:
         """拉取本学期课表（实测 2026-10：kb.chaoxing.com/pc/curriculum/getMyLessons）。
@@ -320,6 +395,52 @@ class ChaoxingAdapter(BaseAdapter):
         return out
 
 
+
+
+def _merge_sections(lessons: list[dict]) -> list[dict]:
+    """同一周内把连续节次合并（如 1 节 + 2 节 → 1 节起、长度 2）。"""
+    out: list[dict] = []
+    for item in sorted(lessons, key=lambda x: (x.get("dayOfWeek") or 0, x.get("beginNumber") or 0)):
+        name = item.get("name") or item.get("displayCourseName") or "未命名课程"
+        loc = item.get("location") or item.get("onlineLocation") or ""
+        begin = int(item.get("beginNumber") or 1)
+        length = int(item.get("length") or 1)
+        weekday = int(item.get("dayOfWeek") or 0)
+        if out:
+            last = out[-1]
+            if (
+                last["weekday"] == weekday
+                and last["name"] == name
+                and last["location"] == loc
+                and begin == last["begin"] + last["length"]
+            ):
+                last["length"] += length
+                continue
+        out.append(
+            {
+                "name": name,
+                "location": loc,
+                "weekday": weekday,
+                "begin": begin,
+                "length": length,
+            }
+        )
+    return out
+
+
+def _compress_weeks(weeks: list[int]) -> str:
+    """[1,2,3,5] → '1-3,5'"""
+    if not weeks:
+        return ""
+    parts, start, prev = [], weeks[0], weeks[0]
+    for w in weeks[1:]:
+        if w == prev + 1:
+            prev = w
+            continue
+        parts.append(f"{start}-{prev}" if prev > start else str(start))
+        start = prev = w
+    parts.append(f"{start}-{prev}" if prev > start else str(start))
+    return ",".join(parts)
 
 
 def _parse_work_list(html: str, course_name: str) -> list[Assignment]:

@@ -10,6 +10,7 @@ from config import exports_dir
 from db.database import get_db
 from db.models import CourseSchedule, Setting, Task
 from services.holidays import range_info
+from services.schedule import week_of_date, weeks_contain
 from services.ics import export_ics
 
 router = APIRouter()
@@ -62,11 +63,10 @@ def schedule_of_date(date: str | None = None, db: Session = Depends(get_db)):
         raise HTTPException(400, f"日期格式错误：{e}") from e
 
     weekday = target.isoweekday()  # 1=周一 … 7=周日
-    rows = (
-        db.query(CourseSchedule)
-        .filter(CourseSchedule.weekday == weekday)
-        .all()
-    )
+    week_no = _current_week_of(db, target)
+    rows = db.query(CourseSchedule).filter(CourseSchedule.weekday == weekday).all()
+    if week_no:
+        rows = [r for r in rows if weeks_contain(r.weeks, week_no)]
     rows.sort(key=lambda r: r.start_time or "")
     return {
         "date": target.isoformat(),
@@ -90,9 +90,13 @@ def schedule_meta(db: Session = Depends(get_db)):
     """课表元信息：当前教学周、最近同步时间（前端展示「第 N 周」）。"""
     week = db.get(Setting, "curriculum_week")
     synced = db.get(Setting, "schedule_synced_at")
+    first = db.get(Setting, "curriculum_first_week_date")
+    maxw = db.get(Setting, "curriculum_max_week")
     return {
         "current_week": int(week.value) if week and week.value.isdigit() else None,
         "synced_at": synced.value if synced else None,
+        "first_week_date": first.value if first else None,
+        "max_week": int(maxw.value) if maxw and maxw.value.isdigit() else None,
     }
 
 
@@ -101,7 +105,11 @@ def schedule_all(db: Session = Depends(get_db)):
     """整学期课表（周视图用）：一次返回全部，前端按 weekday 分组。"""
     rows = db.query(CourseSchedule).all()
     rows.sort(key=lambda r: ((r.weekday or 0), r.start_time or ""))
+    first = db.get(Setting, "curriculum_first_week_date")
+    maxw = db.get(Setting, "curriculum_max_week")
     return {
+        "first_week_date": first.value if first else None,
+        "max_week": int(maxw.value) if maxw and maxw.value.isdigit() else None,
         "items": [
             {
                 "id": r.id,
@@ -128,6 +136,16 @@ def export_dir_info():
 def feed_ics(token: str | None = None):
     """（进阶可选）本地订阅链接。Phase 3+ 实现。"""
     return {"mock": True}
+
+
+def _current_week_of(db: Session, target) -> int | None:
+    first = db.get(Setting, "curriculum_first_week_date")
+    if not first or not first.value:
+        return None
+    try:
+        return week_of_date(target, date_cls.fromisoformat(first.value))
+    except ValueError:
+        return None
 
 
 def _now() -> str:

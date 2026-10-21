@@ -28,6 +28,10 @@ def _migrate() -> None:
             ("teacher", "TEXT"),
             ("source", "TEXT DEFAULT 'chaoxing'"),
         ],
+        "tasks": [
+            ("in_semester", "INTEGER DEFAULT 1"),
+            ("semester", "TEXT"),
+        ],
     }
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())

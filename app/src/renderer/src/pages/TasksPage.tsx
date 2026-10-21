@@ -29,10 +29,14 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
   const [exporting, setExporting] = useState(false)
   const [toast, setToast] = useState('')
   const [onlyDdl, setOnlyDdl] = useState(false)
+  const [semesterOnly, setSemesterOnly] = useState(true)
 
   const refresh = async (): Promise<void> => {
     try {
-      const res = await listTasks(filter === 'all' ? {} : { status: filter })
+      const params: Record<string, string> = {}
+      if (filter !== 'all') params.status = filter
+      if (semesterOnly) params.semester = 'current'
+      const res = await listTasks(params)
       setTasks(res.items)
       setError('')
     } catch (e) {
@@ -46,7 +50,7 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
     setLoading(true)
     void refresh()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filter])
+  }, [filter, semesterOnly])
 
   const visibleTasks = useMemo(
     () => (onlyDdl ? tasks.filter((t) => t.ddl) : tasks),
@@ -140,6 +144,17 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
           ))}
         </div>
 
+        <button
+          onClick={() => setSemesterOnly((v) => !v)}
+          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] border transition-colors ${
+            semesterOnly
+              ? 'bg-[#1e2432] border-[#3a4a68] text-[#7db4ff]'
+              : 'bg-[#1c1c22] border-[#2e2e38] text-[#8a8a98] hover:text-[#e0e0e8]'
+          }`}
+          title="隐藏往届课程遗留的作业"
+        >
+          本学期
+        </button>
         <button
           onClick={() => setOnlyDdl((v) => !v)}
           className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] border transition-colors ${

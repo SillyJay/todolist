@@ -1,7 +1,7 @@
 """APScheduler 定时任务（规格模块 2 + §10.4）。
 
 当前注册：
-- 每周一 08:00 自动同步学习通课表（课表接口只返回"当前周"，必须每周刷一次）
+- 每周日 21:00 同步整学期课表（约 8 秒，防止老师临时调课）
 - 启动时若课表超过 6 天未更新，后台补一次
 
 作业轮询（25-30 分钟）在 Phase 2 与 AI 摘要一起接入。
@@ -37,7 +37,7 @@ def _sync_schedule_once(force: bool = False) -> None:
                 except ValueError:
                     pass
 
-        data = adapter.fetch_schedule()
+        data = adapter.fetch_schedule_semester()
         lessons = data.get("lessons") or []
         db.query(CourseSchedule).filter(CourseSchedule.source == "chaoxing").delete()
         for m in lessons:
@@ -57,6 +57,14 @@ def _sync_schedule_once(force: bool = False) -> None:
                 )
             )
         _put(db, "curriculum_week", str(data.get("current_week") or ""))
+        _put(db, "curriculum_max_week", str(data.get("max_week") or ""))
+        if data.get("school_year"):
+            _put(db, "curriculum_school_year", str(data.get("school_year")))
+        if data.get("semester"):
+            _put(db, "curriculum_semester", str(data.get("semester")))
+        ts = data.get("first_week_date")
+        if ts:
+            _put(db, "curriculum_first_week_date", datetime.fromtimestamp(ts / 1000).date().isoformat())
         _put(db, "schedule_synced_at", datetime.now().astimezone().isoformat(timespec="seconds"))
         db.commit()
     except Exception:  # noqa: BLE001 - 定时任务不允许抛出中断
@@ -80,7 +88,7 @@ def start_scheduler() -> None:
     _scheduler = BackgroundScheduler(timezone="Asia/Shanghai")
     _scheduler.add_job(
         _sync_schedule_once,
-        CronTrigger(day_of_week="mon", hour=8, minute=0),
+        CronTrigger(day_of_week="sun", hour=21, minute=0),
         id="sync_schedule_weekly",
         kwargs={"force": True},
         replace_existing=True,

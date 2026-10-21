@@ -55,6 +55,8 @@ def _serialize(t: Task) -> dict:
         "ai_result": t.ai_result,
         "summary": t.summary,
         "confidence": t.confidence,
+        "in_semester": t.in_semester,
+        "semester": t.semester,
         "created_at": t.created_at,
         "updated_at": t.updated_at,
     }
@@ -66,6 +68,8 @@ def list_tasks(
     platform: str | None = None,
     from_: str | None = None,
     to: str | None = None,
+    semester: str | None = None,  # current=仅本学期 / all=全部
+
     db: Session = Depends(get_db),
 ):
     """任务列表。from/to 为 ISO 日期，按 ddl 过滤。"""
@@ -78,6 +82,8 @@ def list_tasks(
         q = q.filter(Task.ddl >= from_)
     if to:
         q = q.filter(Task.ddl <= to)
+    if semester == "current":
+        q = q.filter(Task.in_semester == 1)
 
     items = q.all()
     # ddl 升序、空 ddl 排最后

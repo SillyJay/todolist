@@ -10,6 +10,7 @@ import {
   Settings2,
   Check
 } from 'lucide-react'
+import { weeksContain, weekOfDate } from '../lib/weeks'
 import {
   dayInfo,
   listPlans,
@@ -94,6 +95,7 @@ function CalendarPage(): React.JSX.Element {
   const [courses, setCourses] = useState<CourseSlot[]>([])
   const [coursesAll, setCoursesAll] = useState<WeekCourse[]>([])
   const [weekNo, setWeekNo] = useState<number | null>(null)
+  const [firstWeekDate, setFirstWeekDate] = useState<string | null>(null)
   const [toast, setToast] = useState('')
   const [formOpen, setFormOpen] = useState(false)
 
@@ -118,7 +120,10 @@ function CalendarPage(): React.JSX.Element {
     void reloadPlans()
     void listTasks({}).then((r) => setTasks(r.items))
     void scheduleAll()
-      .then((r) => setCoursesAll(r.items))
+      .then((r) => {
+        setCoursesAll(r.items)
+        if (r.first_week_date) setFirstWeekDate(r.first_week_date)
+      })
       .catch(() => setCoursesAll([]))
     void scheduleMeta()
       .then((m) => setWeekNo(m.current_week))
@@ -410,6 +415,7 @@ function CalendarPage(): React.JSX.Element {
             plansByDate={plansByDate}
             tasksByDate={tasksByDate}
             courses={coursesAll}
+            firstWeekDate={firstWeekDate}
             selected={selected}
             onSelect={setSelected}
           />
@@ -775,6 +781,7 @@ function WeekView({
   plansByDate,
   tasksByDate,
   courses,
+  firstWeekDate,
   selected,
   onSelect
 }: {
@@ -784,6 +791,7 @@ function WeekView({
   plansByDate: Record<string, DailyPlan[]>
   tasksByDate: Record<string, Task[]>
   courses: WeekCourse[]
+  firstWeekDate: string | null
   selected: string
   onSelect: (d: string) => void
 }): React.JSX.Element {
@@ -818,8 +826,10 @@ function WeekView({
           done: !!p.done
         })
       }
+      const weekNo = firstWeekDate ? weekOfDate(d, firstWeekDate) : null
       for (const c of coursesByDay[d.getDay() === 0 ? 7 : d.getDay()] || []) {
         if (!c.start_time || !c.end_time) continue
+        if (weekNo != null && !weeksContain(c.weeks, weekNo)) continue
         const st = textToMin(c.start_time)
         const en = textToMin(c.end_time)
         raw.push({
@@ -858,7 +868,7 @@ function WeekView({
       }))
     }
     return out
-  }, [days, plansByDate, coursesByDay])
+  }, [days, plansByDate, coursesByDay, firstWeekDate])
 
   const nowTop = ((today.getHours() * 60 + today.getMinutes()) / 60) * HOUR_H
 
