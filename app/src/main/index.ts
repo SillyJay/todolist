@@ -4,9 +4,19 @@ import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 import { startBackend, stopBackend, getBackendPort } from './backend'
 import { createTray } from './tray'
+import { initLogger, log } from './logger'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
+
+// 虚拟显示适配器 / 远程桌面环境下 GPU 初始化可能直接崩溃，强制软件渲染
+// （不影响功能，仅牺牲部分动画流畅度）
+app.disableHardwareAcceleration()
+
+// 日志尽量早初始化，捕获「启动即崩」的场景（写入 %APPDATA%/CampusAssistant/main.log）
+const LOG_FILE = initLogger()
+log(`log file: ${LOG_FILE}`)
+log(`argv: ${process.argv.join(' ')}`)
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -48,6 +58,7 @@ function createWindow(): void {
 }
 
 app.whenReady().then(async () => {
+  log('app ready')
   electronApp.setAppUserModelId('com.campusassistant.app')
 
   app.on('browser-window-created', (_, window) => {
@@ -56,10 +67,12 @@ app.whenReady().then(async () => {
 
   // 启动 Python 后端子进程，端口提供给渲染进程
   const port = await startBackend()
+  log(`backend port=${port}`)
   ipcMain.handle('backend:getPort', () => getBackendPort())
   ipcMain.handle('backend:getBaseUrl', () => `http://127.0.0.1:${port}/api`)
 
   createWindow()
+  log('window created')
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

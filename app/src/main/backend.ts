@@ -8,6 +8,7 @@ import { spawn, ChildProcess } from 'child_process'
 import { createServer } from 'net'
 import { join } from 'path'
 import { app } from 'electron'
+import { log } from './logger'
 
 const BASE_PORT = 8765
 const HEALTH_INTERVAL_MS = 30_000
@@ -59,18 +60,18 @@ async function checkHealth(): Promise<boolean> {
 export async function startBackend(): Promise<number> {
   currentPort = await findFreePort(BASE_PORT)
   const { cmd, args, cwd } = backendCommand(currentPort)
-  console.log(`[backend] starting: ${cmd} ${args.join(' ')}`)
+  log(`[backend] starting: ${cmd} ${args.join(' ')}`)
   child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
-  child.stdout?.on('data', (d) => console.log(`[backend:out] ${d}`.trim()))
-  child.stderr?.on('data', (d) => console.error(`[backend:err] ${d}`.trim()))
+  child.stdout?.on('data', (d) => log(`[backend:out] ${String(d).trim()}`))
+  child.stderr?.on('data', (d) => log(`[backend:err] ${String(d).trim()}`))
   child.on('exit', (code) => {
-    console.log(`[backend] exited code=${code}`)
+    log(`[backend] exited code=${code}`)
     if (!quitting && restartCount < MAX_RESTART) {
       restartCount++
-      console.log(`[backend] restarting (${restartCount}/${MAX_RESTART})...`)
+      log(`[backend] restarting (${restartCount}/${MAX_RESTART})...`)
       startBackend()
     } else if (!quitting) {
-      console.error('[backend] restart limit reached, please check logs')
+      log('[backend] restart limit reached, please check logs')
     }
   })
 
@@ -79,12 +80,12 @@ export async function startBackend(): Promise<number> {
     if (await checkHealth()) {
       restartCount = 0
       startHealthCheck()
-      console.log(`[backend] healthy on port ${currentPort}`)
+      log(`[backend] healthy on port ${currentPort}`)
       return currentPort
     }
     await new Promise((r) => setTimeout(r, 500))
   }
-  console.warn('[backend] health check timeout')
+  log('[backend] health check timeout')
   return currentPort
 }
 
@@ -92,7 +93,7 @@ function startHealthCheck(): void {
   if (healthTimer) clearInterval(healthTimer)
   healthTimer = setInterval(async () => {
     const ok = await checkHealth()
-    if (!ok) console.warn('[backend] health check failed')
+    if (!ok) log('[backend] health check failed')
   }, HEALTH_INTERVAL_MS)
 }
 

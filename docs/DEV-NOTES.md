@@ -54,6 +54,18 @@ python pipwrap.py install -i https://pypi.tuna.tsinghua.edu.cn/simple -r require
 ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ npm install
 ```
 
+**问题 3**：本机显卡为虚拟显示适配器（GameViewer Virtual Display Adapter，远程/云桌面环境），
+Electron 硬件加速初始化易失败导致进程静默退出。
+
+**规避**：
+- 主进程已调用 `app.disableHardwareAcceleration()` 强制软件渲染；
+- Electron 版本锁定 37.x（与 WorkBuddy 自身一致，已验证可在此机器运行），未用 44.x；
+- 主进程启动日志写入 `%APPDATA%\CampusAssistant\main.log`，GUI 无输出时先看该文件。
+
+**问题 4**：PowerShell 7.6 在窄窗口下启动会崩（`totalWidth must be a non-negative value`），
+与本项目无关。规避：窗口拉宽，或 `[Environment]::SetEnvironmentVariable('POWERSHELL_UPDATECHECK','Off','User')`，
+或直接用 `dev.cmd` / cmd。
+
 ## Git 推送
 
 本机 git 推送 GitHub 需要走本机代理（已在仓库内配置）：
