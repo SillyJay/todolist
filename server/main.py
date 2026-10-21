@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import init_db
-from routers import adapters, ai, calendar, files, settings, tasks
+from routers import adapters, ai, calendar, files, plans, settings, tasks
 
 
 @asynccontextmanager
@@ -42,6 +42,7 @@ app.include_router(adapters.router, prefix="/api/adapters", tags=["adapters"])
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(calendar.router, prefix="/api", tags=["calendar"])
+app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 
 

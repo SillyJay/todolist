@@ -97,9 +97,61 @@ export const updateTask = (
 export const deleteTask = (id: number): Promise<{ ok: boolean }> =>
   request(`/tasks/${id}`, { method: 'DELETE' })
 
-// ---- 日历（规格 §7.4）----
+// ---- 日历（规格 §7.4 + §13.7）----
 export const exportCalendar = (): Promise<{ path: string; count: number }> =>
   request('/calendar/export', { method: 'POST' })
+
+export interface DayInfo {
+  date: string
+  lunar: string
+  festivals: string[]
+  term: string | null
+  is_holiday: boolean
+}
+
+export const dayInfo = (from: string, to: string): Promise<{ items: DayInfo[] }> =>
+  request(`/calendar/dayinfo?from_=${from}&to=${to}`)
+
+export interface DailyPlan {
+  id: number
+  date: string
+  start_min: number
+  end_min: number
+  title: string
+  note?: string | null
+  color: string
+}
+
+export const listPlans = (from: string, to: string): Promise<{ items: DailyPlan[] }> =>
+  request(`/plans?from_=${from}&to=${to}`)
+
+export const createPlan = (
+  body: Omit<DailyPlan, 'id'>
+): Promise<DailyPlan> => request('/plans', { method: 'POST', body: JSON.stringify(body) })
+
+export const updatePlan = (
+  id: number,
+  patch: Partial<Omit<DailyPlan, 'id'>>
+): Promise<DailyPlan> => request(`/plans/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+export const deletePlan = (id: number): Promise<{ ok: boolean }> =>
+  request(`/plans/${id}`, { method: 'DELETE' })
+
+export interface CourseSlot {
+  id: number
+  course_name?: string | null
+  course_abbr?: string | null
+  start_time?: string | null
+  end_time?: string | null
+  location?: string | null
+  weeks?: string | null
+}
+
+export const scheduleOf = (date: string): Promise<{ date: string; items: CourseSlot[] }> =>
+  request(`/schedule?date=${date}`)
+
+export const exportDir = (): Promise<{ dir: string; exists: boolean }> =>
+  request('/calendar/export-dir')
 
 // ---- 适配器状态（规格 §7.2）----
 export interface AdaptersStatus {

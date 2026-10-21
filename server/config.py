@@ -27,6 +27,24 @@ def db_path() -> str:
     return os.path.join(data_dir(), "campus_assistant.db")
 
 
+def app_root() -> str:
+    """助手（程序）所在目录。
+
+    - 开发态：server/ 的父目录，即 campus-assistant/
+    - 打包后：可执行文件所在目录（PyInstaller 单文件时 __file__ 在临时目录，用 sys.executable）
+    """
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def exports_dir() -> str:
+    """ICS 导出目录（规格 §13.8：不得写入 C 盘，默认放在助手目录下 exports/）。"""
+    target = os.path.join(app_root(), "exports")
+    os.makedirs(target, exist_ok=True)
+    return target
+
+
 def set_secret(key: str, value: str) -> None:
     import keyring
     keyring.set_password(SERVICE_NAME, key, value)

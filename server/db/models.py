@@ -72,3 +72,18 @@ class SummaryCache(Base):
     text_hash = Column(Text, primary_key=True)
     summary = Column(Text)
     created_at = Column(Text)
+
+
+class DailyPlan(Base):
+    """日计划（规格 §13.6）：用户自定义的分钟级安排。"""
+    __tablename__ = "daily_plans"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    date = Column(Text, nullable=False)        # YYYY-MM-DD
+    start_min = Column(Integer, nullable=False)  # 00:00 起的分钟数
+    end_min = Column(Integer, nullable=False)
+    title = Column(Text, nullable=False)
+    note = Column(Text)
+    color = Column(Text, default="blue")       # blue/green/amber/violet/rose
+    created_at = Column(Text)
+    updated_at = Column(Text)
