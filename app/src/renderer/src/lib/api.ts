@@ -203,6 +203,13 @@ export const chaoxingRefresh = (): Promise<{
   message?: string
 }> => request('/adapters/chaoxing/refresh', { method: 'POST' })
 
+export const chaoxingRefreshSchedule = (): Promise<{
+  ok: boolean
+  count?: number
+  current_week?: number
+  message?: string
+}> => request('/adapters/chaoxing/refresh-schedule', { method: 'POST' })
+
 export const refreshStatus = (): Promise<RefreshStatus> =>
   request('/adapters/chaoxing/refresh/status')
 

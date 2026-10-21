@@ -40,7 +40,9 @@ class CourseSchedule(Base):
     start_time = Column(Text)                      # "08:00"
     end_time = Column(Text)
     location = Column(Text)
-    weeks = Column(Text)                           # "1-16"
+    weeks = Column(Text)                           # "1,2,3..." 或 "1-16"
+    teacher = Column(Text)
+    source = Column(Text, default="chaoxing")      # chaoxing / manual
 
 
 class File(Base):

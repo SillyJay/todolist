@@ -23,6 +23,7 @@ LOGIN_URL = "https://passport2.chaoxing.com/fanyalogin"
 COURSE_LIST_URL = "https://mooc1-api.chaoxing.com/mycourse/backclazzdata?view=json"
 WORK_LIST_URL = "https://mooc1-api.chaoxing.com/work/getAllWork"
 HOME_URL = "https://i.chaoxing.com"
+SCHEDULE_URL = "https://kb.chaoxing.com/pc/curriculum/getMyLessons"
 
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -115,6 +116,83 @@ class ChaoxingAdapter(BaseAdapter):
             return {"ok": False, "code": "BAD_COOKIE", "message": "Cookie 缺少 _uid 或 _d 字段"}
         self.save_cookies(cookies)
         return {"ok": True, "code": "OK", "message": f"已导入 {len(cookies)} 个 Cookie 字段"}
+
+
+    # ---------- 课表 ----------
+
+    def fetch_schedule(self) -> dict:
+        """拉取本学期课表（实测 2026-10：kb.chaoxing.com/pc/curriculum/getMyLessons）。
+
+        返回 {"current_week": int, "lessons": [{name, location, teacher, weekday,
+              begin, length, weeks, start_time, end_time}]}
+        同一门课连续节次会合并成一个时段（如 1-2 节）。
+        """
+        with httpx.Client(
+            timeout=25,
+            headers={
+                "User-Agent": UA,
+                "Referer": "https://kb.chaoxing.com/res/pc/curriculum/schedule.html",
+            },
+            cookies=self.load_cookies(),
+        ) as cli:
+            resp = cli.get(SCHEDULE_URL, params={"curTime": int(time.time() * 1000)})
+            resp.raise_for_status()
+            data = resp.json().get("data") or {}
+
+        cur = data.get("curriculum") or {}
+        cfg = cur.get("lessonTimeConfigArray") or []
+        current_week = cur.get("currentWeek") or 0
+
+        raw = data.get("lessonArray") or []
+        # 按 星期+课程名+地点+周次 分组后合并连续节次
+        raw.sort(key=lambda x: (x.get("dayOfWeek") or 0, x.get("beginNumber") or 0))
+        merged: list[dict] = []
+        for item in raw:
+            name = item.get("name") or item.get("displayCourseName") or "未命名课程"
+            loc = item.get("location") or item.get("onlineLocation") or ""
+            begin = int(item.get("beginNumber") or 1)
+            length = int(item.get("length") or 1)
+            weekday = int(item.get("dayOfWeek") or 0)
+            weeks = str(item.get("weeks") or "")
+
+            if merged:
+                last = merged[-1]
+                if (
+                    last["weekday"] == weekday
+                    and last["name"] == name
+                    and last["location"] == loc
+                    and last["weeks"] == weeks
+                    and begin == last["begin"] + last["length"]
+                ):
+                    last["length"] += length
+                    continue
+
+            merged.append(
+                {
+                    "name": name,
+                    "location": loc,
+                    "teacher": item.get("teacherName") or "",
+                    "weekday": weekday,
+                    "begin": begin,
+                    "length": length,
+                    "weeks": weeks,
+                }
+            )
+
+        # 节次 → 具体时间
+        for m in merged:
+            start_i = m["begin"] - 1
+            end_i = m["begin"] + m["length"] - 2
+            if 0 <= start_i < len(cfg):
+                m["start_time"] = cfg[start_i].split("-")[0]
+            else:
+                m["start_time"] = None
+            if 0 <= end_i < len(cfg):
+                m["end_time"] = cfg[end_i].split("-")[1]
+            else:
+                m["end_time"] = None
+
+        return {"current_week": current_week, "lessons": merged}
 
     # ---------- 数据抓取 ----------
 

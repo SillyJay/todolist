@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 from adapters.chaoxing import ChaoxingAdapter
 from adapters.xiaoya import XiaoyaAdapter
 from db.database import get_db
-from db.models import Setting, Task
+from db.models import CourseSchedule, Setting, Task
 
 router = APIRouter()
 chaoxing = ChaoxingAdapter()
@@ -73,6 +73,43 @@ def chaoxing_refresh():
     )
     threading.Thread(target=_do_refresh, daemon=True).start()
     return {"ok": True, "started": True, "message": "已开始刷新"}
+
+
+@router.post("/chaoxing/refresh-schedule")
+def chaoxing_refresh_schedule(db: Session = Depends(get_db)):
+    """同步课表（HTTP 接口，约 1 秒）。覆盖 source='chaoxing' 的旧数据。"""
+    if not chaoxing.has_session():
+        return {"ok": False, "code": "NOT_LOGGED_IN", "message": "未登录学习通"}
+    try:
+        data = chaoxing.fetch_schedule()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "code": "FETCH_FAILED", "message": str(e)}
+
+    lessons = data.get("lessons") or []
+    db.query(CourseSchedule).filter(CourseSchedule.source == "chaoxing").delete()
+    for m in lessons:
+        if not m.get("weekday") or not m.get("start_time"):
+            continue
+        db.add(
+            CourseSchedule(
+                course_name=m["name"],
+                course_abbr=_abbr(m["name"]),
+                weekday=m["weekday"],
+                start_time=m["start_time"],
+                end_time=m.get("end_time"),
+                location=m.get("location"),
+                weeks=m.get("weeks"),
+                teacher=m.get("teacher"),
+                source="chaoxing",
+            )
+        )
+    db.commit()
+    return {
+        "ok": True,
+        "count": len(lessons),
+        "current_week": data.get("current_week"),
+        "message": f"已同步 {len(lessons)} 个课程时段（第 {data.get('current_week')} 周）",
+    }
 
 
 @router.get("/chaoxing/refresh/status")
@@ -144,10 +181,10 @@ def _abbr(course_name: str) -> str:
     name = course_name or ""
     m = re.search(r"《(.+?)》", name)
     if m:
-        return m.group(1)[:12]
+        return m.group(1)[:8]
     name = re.sub(r"^[0-9\-]+", "", name)
     name = re.sub(r"[-—].*$", "", name)
-    return name[:12] or course_name[:12]
+    return name[:8] or course_name[:8]
 
 
 @router.get("/status")

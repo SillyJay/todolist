@@ -24,6 +24,10 @@ def _migrate() -> None:
             ("quadrant", "TEXT DEFAULT 'q2'"),
             ("done", "INTEGER DEFAULT 0"),
         ],
+        "course_schedule": [
+            ("teacher", "TEXT"),
+            ("source", "TEXT DEFAULT 'chaoxing'"),
+        ],
     }
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())

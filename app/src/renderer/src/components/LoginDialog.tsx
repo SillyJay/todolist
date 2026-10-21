@@ -8,13 +8,15 @@ import {
   AlertCircle,
   GraduationCap,
   Sparkles,
-  Loader2
+  Loader2,
+  CalendarDays
 } from 'lucide-react'
 import {
   adaptersStatus,
   chaoxingLogin,
   chaoxingImportCookie,
   chaoxingRefresh,
+  chaoxingRefreshSchedule,
   refreshStatus,
   xiaoyaImportCookie,
   xiaoyaLogin,
@@ -198,6 +200,7 @@ function ChaoxingPanel({
             <Check size={13} /> 学习通已登录
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => void doRefresh()}
             disabled={progress?.running}
@@ -210,6 +213,19 @@ function ChaoxingPanel({
             )}
             同步作业（约 2 分钟）
           </button>
+
+          <button
+            onClick={async () => {
+              setMsg(null)
+              const r = await chaoxingRefreshSchedule()
+              setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '课表已同步' : '课表同步失败') })
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+          >
+            <CalendarDays size={13} />
+            同步课表（约 1 秒）
+          </button>
+          </div>
 
           {progress && (
             <div className="text-[11.5px] text-[#8a8a98]">

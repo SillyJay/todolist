@@ -1152,9 +1152,13 @@ function DayView({
                   {c.start_time}–{c.end_time}
                 </div>
                 {c.location && (
-                  <div className="flex items-center gap-0.5 text-[10px] text-[#6b6b7a] mt-0.5">
-                    <MapPin size={8} /> {c.location}
+                  <div className="flex items-start gap-0.5 text-[10px] text-[#6b6b7a] mt-0.5">
+                    <MapPin size={8} className="mt-[1px] shrink-0" />
+                    <span className="truncate">{c.location}</span>
                   </div>
+                )}
+                {c.weeks && c.weeks.length <= 6 && (
+                  <div className="text-[9.5px] text-[#4f6a8a] mt-0.5">第 {c.weeks} 周</div>
                 )}
               </div>
             ))}
