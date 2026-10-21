@@ -12,12 +12,15 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from db.database import init_db
 from routers import adapters, ai, calendar, files, plans, settings, tasks
+from services.scheduler import start_scheduler, stop_scheduler
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
+    start_scheduler()
     yield
+    stop_scheduler()
 
 
 app = FastAPI(title="Campus Assistant API", lifespan=lifespan)

@@ -85,6 +85,17 @@ def schedule_of_date(date: str | None = None, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/schedule/meta")
+def schedule_meta(db: Session = Depends(get_db)):
+    """课表元信息：当前教学周、最近同步时间（前端展示「第 N 周」）。"""
+    week = db.get(Setting, "curriculum_week")
+    synced = db.get(Setting, "schedule_synced_at")
+    return {
+        "current_week": int(week.value) if week and week.value.isdigit() else None,
+        "synced_at": synced.value if synced else None,
+    }
+
+
 @router.get("/schedule/all")
 def schedule_all(db: Session = Depends(get_db)):
     """整学期课表（周视图用）：一次返回全部，前端按 weekday 分组。"""

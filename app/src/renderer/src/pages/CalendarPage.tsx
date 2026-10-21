@@ -18,8 +18,10 @@ import {
   deletePlan,
   scheduleOf,
   scheduleAll,
+  scheduleMeta,
   listTasks,
   exportCalendar,
+  chaoxingRefreshSchedule,
   type DayInfo,
   type DailyPlan,
   type CourseSlot,
@@ -91,6 +93,7 @@ function CalendarPage(): React.JSX.Element {
   const [plans, setPlans] = useState<DailyPlan[]>([])
   const [courses, setCourses] = useState<CourseSlot[]>([])
   const [coursesAll, setCoursesAll] = useState<WeekCourse[]>([])
+  const [weekNo, setWeekNo] = useState<number | null>(null)
   const [toast, setToast] = useState('')
   const [formOpen, setFormOpen] = useState(false)
 
@@ -117,6 +120,9 @@ function CalendarPage(): React.JSX.Element {
     void scheduleAll()
       .then((r) => setCoursesAll(r.items))
       .catch(() => setCoursesAll([]))
+    void scheduleMeta()
+      .then((m) => setWeekNo(m.current_week))
+      .catch(() => setWeekNo(null))
   }, [reloadInfos, reloadPlans])
 
   useEffect(() => {
@@ -274,9 +280,22 @@ function CalendarPage(): React.JSX.Element {
             今天
           </button>
 
+          {weekNo != null && (
+            <span className="px-1.5 py-0.5 rounded text-[11px] bg-[#1e2432] text-[#7db4ff]">
+              第 {weekNo} 周
+            </span>
+          )}
+
           <div className="ml-auto flex items-center gap-1.5">
             <button
-              onClick={() => setToast('课表接入学习通后自动导入（下一阶段）')}
+              onClick={async () => {
+                setToast('正在同步课表…')
+                const r = await chaoxingRefreshSchedule()
+                setToast(r.ok ? r.message || '课表已同步' : r.message || '同步失败')
+                const [all, meta] = await Promise.all([scheduleAll(), scheduleMeta()])
+                setCoursesAll(all.items)
+                setWeekNo(meta.current_week)
+              }}
               className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[#8a8a98] border border-[#2e2e38] hover:text-[#e0e0e8]"
             >
               <Upload size={12} /> 导入课表
@@ -782,11 +801,11 @@ function WeekView({
   }, [courses])
 
   const blocksByDay = useMemo(() => {
-    const out: Record<string, { top: number; height: number; left: string; width: string; label: string; sub: string; color: string; done?: boolean }[]> = {}
+    const out: Record<string, { top: number; height: number; left: string; width: string; label: string; sub: string; color: string; done?: boolean; online?: boolean }[]> = {}
 
     for (const d of days) {
       const key = ymd(d)
-      const raw: { start: number; end: number; label: string; sub: string; color: string; done?: boolean }[] = []
+      const raw: { start: number; end: number; label: string; sub: string; color: string; done?: boolean; online?: boolean }[] = []
 
       for (const p of plansByDate[key] || []) {
         const q = qOf(p.quadrant)
@@ -808,7 +827,8 @@ function WeekView({
           end: en,
           label: c.course_abbr || c.course_name || '课程',
           sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
-          color: '#3f6fa8'
+          color: '#3f6fa8',
+          online: (c.location || '').includes('线上')
         })
       }
 
@@ -833,7 +853,8 @@ function WeekView({
         label: it.label,
         sub: it.sub,
         color: it.color,
-        done: it.done
+        done: it.done,
+        online: it.online
       }))
     }
     return out
@@ -936,8 +957,8 @@ function WeekView({
                       height: b.height,
                       left: b.left,
                       width: b.width,
-                      background: `${b.color}30`,
-                      borderLeft: `2px solid ${b.color}`,
+                      background: `${b.color}${b.online ? '1a' : '30'}`,
+                      borderLeft: `2px ${b.online ? 'dashed' : 'solid'} ${b.color}`,
                       color: b.done ? '#7a7a88' : '#dcdce6',
                       textDecoration: b.done ? 'line-through' : 'none'
                     }}
@@ -993,6 +1014,7 @@ function DayView({
       color: string
       id?: number
       done?: boolean
+      online?: boolean
     }[] = []
     for (const p of plans) {
       const q = qOf(p.quadrant)
@@ -1015,7 +1037,8 @@ function DayView({
         height: Math.max(16, ((e - s) / 60) * HOUR_H - 1),
         label: c.course_abbr || c.course_name || '课程',
         sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
-        color: '#3f6fa8'
+        color: '#3f6fa8',
+        online: (c.location || '').includes('线上')
       })
     }
     return list
@@ -1097,8 +1120,8 @@ function DayView({
                   style={{
                     top: b.top,
                     height: b.height,
-                    background: `${b.color}2e`,
-                    borderLeft: `2px solid ${b.color}`,
+                    background: `${b.color}${b.online ? '18' : '2e'}`,
+                    borderLeft: `2px ${b.online ? 'dashed' : 'solid'} ${b.color}`,
                     color: b.done ? '#7a7a88' : '#dcdce6',
                     textDecoration: b.done ? 'line-through' : 'none'
                   }}

@@ -103,6 +103,8 @@ def chaoxing_refresh_schedule(db: Session = Depends(get_db)):
                 source="chaoxing",
             )
         )
+    _put_setting(db, "curriculum_week", str(data.get("current_week") or ""))
+    _put_setting(db, "schedule_synced_at", _now())
     db.commit()
     return {
         "ok": True,
@@ -169,6 +171,14 @@ def _do_refresh() -> None:
     finally:
         db.close()
         _refresh_state.update(running=False, current="")
+
+
+def _put_setting(db: Session, key: str, value: str) -> None:
+    row = db.get(Setting, key)
+    if row:
+        row.value = value
+    else:
+        db.add(Setting(key=key, value=value))
 
 
 def _abbr(course_name: str) -> str:
