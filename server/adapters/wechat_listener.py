@@ -25,12 +25,27 @@ CLI_NAMES = ["wechat-cli", "wechat-cli.exe"]
 
 
 def find_cli() -> str | None:
-    """探测 wechat-cli：PATH → %LOCALAPPDATA%\\wechat-cli → npm 全局。"""
+    """探测 wechat-cli。
+
+    顺序：应用内安装目录（D 盘优先，回落 C 盘）→ PATH → 常见安装位置。
+    """
+    # 1) 应用自己安装的（本次新增，优先级最高）
+    try:
+        from services.component_installer import find_installed_exe
+
+        installed = find_installed_exe()
+        if installed and os.path.exists(installed):
+            return installed
+    except Exception:  # noqa: BLE001 - 安装器不可用时不影响探测
+        pass
+
+    # 2) 系统 PATH
     for name in CLI_NAMES:
         p = shutil.which(name)
         if p:
             return p
 
+    # 3) 常见安装位置
     candidates = [
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "wechat-cli", "wechat-cli.exe"),
         os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "wechat-cli", "wechat-cli.exe"),

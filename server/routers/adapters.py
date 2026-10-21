@@ -1,5 +1,7 @@
 """平台适配器路由（规格 §7.2）。"""
 import threading
+import json
+import os
 from datetime import datetime
 
 from fastapi import APIRouter, Depends
@@ -40,6 +42,11 @@ class CookieBody(BaseModel):
 
 class WeChatConfig(BaseModel):
     groups: list[str] = []
+
+
+class WeChatInstall(BaseModel):
+    source: str
+    sha256: str | None = None
 
 
 class WeChatSimulate(BaseModel):
@@ -340,11 +347,41 @@ def wechat_status(db: Session = Depends(get_db)):
     """微信监听状态：CLI 安装情况 + 微信进程 + 监听器状态 + 配置的群。"""
     cfg = db.get(Setting, "wechat_groups")
     groups = [g for g in (cfg.value.split(",") if cfg and cfg.value else []) if g]
+    from services.component_installer import install_location
+
+    loc = install_location()
+    manifest_path = os.path.join(loc["active"], "manifest.json")
+    manifest = None
+    if os.path.exists(manifest_path):
+        try:
+            with open(manifest_path, encoding="utf-8") as f:
+                manifest = json.load(f)
+        except (OSError, ValueError):
+            manifest = None
+
     return {
         "env": cli_status(),
         "listener": wechat.status(),
         "config_groups": groups,
+        "install": {**loc, "manifest": manifest},
     }
+
+
+@router.post("/wechat/install")
+def wechat_install(body: WeChatInstall):
+    """一键安装 wechat-cli（用户主动触发，不静默下载）。"""
+    from services.component_installer import install
+
+    return install(body.source.strip(), body.sha256)
+
+
+@router.post("/wechat/uninstall")
+def wechat_uninstall():
+    from services.component_installer import uninstall
+
+    if wechat.status()["state"] == "running":
+        wechat.stop()
+    return uninstall()
 
 
 @router.put("/wechat/config")

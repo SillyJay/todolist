@@ -267,7 +267,26 @@ export interface WeChatStatus {
     recent: { group: string; sender: string; text: string; time: string; keyword_hit: boolean }[]
   }
   config_groups: string[]
+  install: {
+    preferred: string
+    preferred_writable: boolean
+    active: string
+    fallback: string
+    manifest: { exe?: string; size?: number; installed_at?: string; source?: string } | null
+  }
 }
+
+export const wechatInstall = (
+  source: string,
+  sha256?: string
+): Promise<{ ok: boolean; code?: string; message: string; exe?: string; size?: number; dir?: string }> =>
+  request('/adapters/wechat/install', {
+    method: 'POST',
+    body: JSON.stringify({ source, sha256 })
+  })
+
+export const wechatUninstall = (): Promise<{ ok: boolean; removed: string[] }> =>
+  request('/adapters/wechat/uninstall', { method: 'POST' })
 
 export const wechatStatus = (): Promise<WeChatStatus> => request('/adapters/wechat/status')
 

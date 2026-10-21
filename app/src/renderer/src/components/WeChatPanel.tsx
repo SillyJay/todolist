@@ -5,7 +5,7 @@ import {
   Loader2,
   Play,
   Square,
-  Terminal,
+  Download,
   MessageSquare,
   Send
 } from 'lucide-react'
@@ -15,6 +15,8 @@ import {
   wechatStart,
   wechatStop,
   wechatSimulate,
+  wechatInstall,
+  wechatUninstall,
   type WeChatStatus
 } from '../lib/api'
 
@@ -25,6 +27,7 @@ export default function WeChatPanel(): React.JSX.Element {
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [testText, setTestText] = useState('')
+  const [sourceUrl, setSourceUrl] = useState('')
   const [testResult, setTestResult] = useState('')
   const timer = useRef<number | null>(null)
 
@@ -109,15 +112,80 @@ export default function WeChatPanel(): React.JSX.Element {
         />
       </div>
 
-      {!env?.installed && (
-        <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-[#2a2218] border border-[#3d3320] text-[11.5px] text-[#e0b080] leading-relaxed">
-          <Terminal size={12} className="mt-0.5 shrink-0" />
-          <span>
-            未检测到 wechat-cli。它负责读取微信消息，需要你自行安装并配合微信 4.x 桌面版登录。
-            装好后点「重新检测」即可。
+      {/* 安装位置 + 一键安装 */}
+      <div className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-2.5 space-y-1.5">
+        <div className="flex items-center gap-2 text-[11px]">
+          <span className="text-[#5c5c6a] w-20 shrink-0">安装目录</span>
+          <span className="text-[#9a9aa8] truncate" title={st?.install.active}>
+            {st?.install.active || '—'}
+          </span>
+          <span
+            className={`ml-auto shrink-0 px-1 py-0.5 rounded text-[10px] ${
+              st?.install.active?.startsWith('C:')
+                ? 'bg-[#2a2218] text-[#e0b080]'
+                : 'bg-[#16302a] text-[#7ee2b8]'
+            }`}
+          >
+            {st?.install.active?.startsWith('C:') ? 'C 盘（回落）' : 'D 盘（优先）'}
           </span>
         </div>
-      )}
+        {st?.install.manifest?.size != null && (
+          <div className="flex items-center gap-2 text-[11px]">
+            <span className="text-[#5c5c6a] w-20 shrink-0">组件大小</span>
+            <span className="text-[#9a9aa8]">
+              {(st.install.manifest.size / 1024 / 1024).toFixed(1)} MB
+              {st.install.manifest.installed_at ? ` · 安装于 ${st.install.manifest.installed_at.slice(0, 16).replace('T', ' ')}` : ''}
+            </span>
+          </div>
+        )}
+
+        {!env?.installed ? (
+          <div className="flex gap-2 pt-1">
+            <input
+              value={sourceUrl}
+              onChange={(e) => setSourceUrl(e.target.value)}
+              placeholder="下载地址或本地 zip/exe 路径"
+              className="flex-1 px-2.5 py-1.5 rounded-md bg-[#16161a] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
+            />
+            <button
+              onClick={async () => {
+                if (!sourceUrl.trim()) return
+                setBusy(true)
+                setMsg('正在安装…')
+                try {
+                  const r = await wechatInstall(sourceUrl.trim())
+                  setMsg(r.ok ? `安装完成：${r.exe}` : r.message)
+                  await reload()
+                } finally {
+                  setBusy(false)
+                }
+              }}
+              disabled={busy || !sourceUrl.trim()}
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#4f8cff] text-white text-[11.5px] disabled:opacity-40"
+            >
+              {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
+              一键安装
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={async () => {
+              setBusy(true)
+              try {
+                const r = await wechatUninstall()
+                setMsg(`已卸载（${r.removed.length} 个目录）`)
+                await reload()
+              } finally {
+                setBusy(false)
+              }
+            }}
+            disabled={busy}
+            className="text-[11px] text-[#8a8a98] hover:text-[#ff9aa2]"
+          >
+            卸载组件
+          </button>
+        )}
+      </div>
 
       {/* 群配置 */}
       <div>
