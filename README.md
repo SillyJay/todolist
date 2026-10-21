@@ -32,8 +32,20 @@ campus-assistant/
 
 ## 开发进度
 
-- [ ] Phase 0：工程地基（骨架 + 子进程拉起 + /health 连通）
+- [x] Phase 0：工程地基（FastAPI 骨架 + mock 路由 + Electron 子进程管理 + /health 连通）
 - [ ] Phase 1：壳与单平台闭环（学习通）
 - [ ] Phase 2：AI 与微信监听
 - [ ] Phase 3：小雅与文件体系
 - [ ] Phase 4：打包与交付
+
+## 本地启动
+
+```bash
+# 后端（可选，Electron 会自动拉起）
+cd server && python main.py --port 8765
+
+# 前端
+cd app && npm run dev
+```
+
+环境踩坑记录见 `docs/DEV-NOTES.md`。
