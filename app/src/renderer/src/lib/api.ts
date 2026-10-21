@@ -66,6 +66,7 @@ export interface Task {
   status: 'pending' | 'done' | 'expired' | 'ignored'
   url?: string | null
   summary?: string | null
+  raw_text?: string | null
   confidence?: number | null
 }
 
@@ -76,6 +77,30 @@ export const listTasks = (
   return request(`/tasks${qs ? `?${qs}` : ''}`)
 }
 
+export interface TaskCreateBody {
+  title: string
+  ddl?: string | null
+  course_name?: string | null
+  course_abbr?: string | null
+  platform?: string
+  url?: string | null
+}
+
+export const createTask = (body: TaskCreateBody): Promise<Task> =>
+  request('/tasks', { method: 'POST', body: JSON.stringify(body) })
+
+export const updateTask = (
+  id: number,
+  patch: Partial<Pick<Task, 'status' | 'title' | 'ddl' | 'course_abbr' | 'course_name' | 'summary'>>
+): Promise<Task> => request(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+export const deleteTask = (id: number): Promise<{ ok: boolean }> =>
+  request(`/tasks/${id}`, { method: 'DELETE' })
+
+// ---- 日历（规格 §7.4）----
+export const exportCalendar = (): Promise<{ path: string; count: number }> =>
+  request('/calendar/export', { method: 'POST' })
+
 // ---- 适配器状态（规格 §7.2）----
 export interface AdaptersStatus {
   chaoxing: { logged_in: boolean }
@@ -83,6 +108,32 @@ export interface AdaptersStatus {
   wechat: { state: 'running' | 'offline' | 'not_configured' }
 }
 export const adaptersStatus = (): Promise<AdaptersStatus> => request('/adapters/status')
+
+export const chaoxingLogin = (
+  username: string,
+  password: string
+): Promise<{ ok: boolean; code: string; message: string }> =>
+  request('/adapters/chaoxing/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password })
+  })
+
+export const chaoxingImportCookie = (
+  cookie: string
+): Promise<{ ok: boolean; code: string; message: string }> =>
+  request('/adapters/chaoxing/import-cookie', {
+    method: 'POST',
+    body: JSON.stringify({ cookie })
+  })
+
+export const chaoxingRefresh = (): Promise<{
+  ok: boolean
+  created?: number
+  updated?: number
+  total?: number
+  code?: string
+  message?: string
+}> => request('/adapters/chaoxing/refresh', { method: 'POST' })
 
 // ---- 设置（规格 §7.5）----
 export const getSettings = (): Promise<Record<string, string>> => request('/settings')

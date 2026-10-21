@@ -5,6 +5,7 @@ import icon from '../../resources/icon.png?asset'
 import { startBackend, stopBackend, getBackendPort } from './backend'
 import { createTray } from './tray'
 import { initLogger, log } from './logger'
+import { startNotificationWatcher, stopNotificationWatcher } from './notify'
 
 let mainWindow: BrowserWindow | null = null
 let isQuitting = false
@@ -86,6 +87,12 @@ app.whenReady().then(async () => {
   createWindow()
   log('window created')
 
+  // DDL 到点提醒（规格模块 1）
+  startNotificationWatcher(
+    () => mainWindow,
+    () => `http://127.0.0.1:${getBackendPort()}/api`
+  )
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
@@ -100,5 +107,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   isQuitting = true
+  stopNotificationWatcher()
   stopBackend()
 })
