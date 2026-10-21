@@ -9,6 +9,22 @@ set http_proxy=
 set https_proxy=
 
 cd /d "%~dp0app"
-echo Starting Campus Assistant (dev)...
+if errorlevel 1 (
+  echo [ERROR] app directory not found
+  pause
+  exit /b 1
+)
+
+echo ============================================
+echo  Campus Assistant - dev mode
+echo  dir: %CD%
+echo ============================================
+echo.
+
 call npm run dev
+echo.
+echo ============================================
+echo  dev process exited with code %ERRORLEVEL%
+echo  main process log: %APPDATA%\CampusAssistant\main.log
+echo ============================================
 pause
