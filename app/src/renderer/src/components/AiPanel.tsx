@@ -93,14 +93,14 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
   const downloadHint = isXiaoya ? '小雅需逐个触发浏览器下载，约 20-30 秒' : ''
 
   return (
-    <aside className="h-full flex flex-col bg-[#131317] border-l border-[#24242c]">
-      <div className="h-9 shrink-0 flex items-center justify-between px-3 border-b border-[#24242c]">
-        <span className="text-[12px] text-[#9a9aa8]">任务详情</span>
+    <aside className="h-full flex flex-col bg-[var(--bg-deep)] border-l border-[var(--border-soft)]">
+      <div className="h-9 shrink-0 flex items-center justify-between px-3 border-b border-[var(--border-soft)]">
+        <span className="text-[12px] text-[var(--faint)]">任务详情</span>
         <div className="flex items-center gap-1">
           <button
             onClick={() => setMode('summary')}
             className={`px-1.5 py-0.5 rounded text-[11px] ${
-              mode === 'summary' ? 'bg-[#242430] text-[#d0d0da]' : 'text-[#6b6b7a]'
+              mode === 'summary' ? 'bg-[var(--surface-3)] text-[var(--fg)]' : 'text-[var(--faint)]'
             }`}
           >
             摘要
@@ -108,7 +108,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
           <button
             onClick={() => setMode('raw')}
             className={`px-1.5 py-0.5 rounded text-[11px] ${
-              mode === 'raw' ? 'bg-[#242430] text-[#d0d0da]' : 'text-[#6b6b7a]'
+              mode === 'raw' ? 'bg-[var(--surface-3)] text-[var(--fg)]' : 'text-[var(--faint)]'
             }`}
           >
             原文
@@ -119,13 +119,13 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
       <div className="flex-1 overflow-y-auto p-3">
         {!task ? (
           <div className="h-full flex flex-col items-center justify-center text-center">
-            <Sparkles size={18} className="text-[#3a3a46] mb-2" />
-            <div className="text-[12px] text-[#5c5c6a]">选中左侧任务查看详情</div>
+            <Sparkles size={18} className="text-[var(--faint)] mb-2" />
+            <div className="text-[12px] text-[var(--faint)]">选中左侧任务查看详情</div>
           </div>
         ) : (
           <div className="space-y-3">
             <div>
-              <div className="text-[13px] text-[#e0e0e8] leading-snug">{task.title}</div>
+              <div className="text-[13px] text-[var(--fg)] leading-snug">{task.title}</div>
               <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
                 <Tag>{task.platform}</Tag>
                 {task.course_abbr && <Tag>{task.course_abbr}</Tag>}
@@ -138,7 +138,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
             {(attLoading || attachments.length > 0 || attMsg) && (
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[11px] text-[#5c5c6a] flex items-center gap-1">
+                  <span className="text-[11px] text-[var(--faint)] flex items-center gap-1">
                     <Paperclip size={10} />
                     附件
                     {attachments.length > 0 && ` · ${attachments.length} 个`}
@@ -147,7 +147,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                     <button
                       onClick={() => void doDownloadAll()}
                       disabled={downloading}
-                      className="flex items-center gap-1 text-[10.5px] text-[#7db4ff] hover:text-[#a9c9ff] disabled:opacity-50"
+                      className="flex items-center gap-1 text-[10.5px] text-[var(--accent-strong)] hover:text-[var(--accent-strong)] disabled:opacity-50"
                     >
                       {downloading ? (
                         <Loader2 size={10} className="animate-spin" />
@@ -160,46 +160,46 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                 </div>
 
                 {attLoading ? (
-                  <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-md bg-[#1a1a20] border border-[#26262f] text-[11.5px] text-[#6b6b7a]">
+                  <div className="flex items-center gap-1.5 px-2.5 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] text-[var(--faint)]">
                     <Loader2 size={11} className="animate-spin" /> 正在读取附件…
                   </div>
                 ) : attachments.length === 0 ? (
-                  <div className="px-2.5 py-2 rounded-md bg-[#1a1a20] border border-[#26262f] text-[11.5px] text-[#6b6b7a]">
+                  <div className="px-2.5 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] text-[var(--faint)]">
                     {attMsg || '该任务没有附件'}
                   </div>
                 ) : (
-                  <div className="rounded-md border border-[#26262f] divide-y divide-[#22222a] overflow-hidden">
+                  <div className="rounded-md border border-[var(--border)] divide-y divide-[var(--border-soft)] overflow-hidden">
                     {attachments.map((a) => (
                       <div
                         key={a.key}
-                        className="flex items-center gap-2 px-2 py-1.5 bg-[#1a1a20] hover:bg-[#1e1e26]"
+                        className="flex items-center gap-2 px-2 py-1.5 bg-[var(--surface)] hover:bg-[var(--surface-2)]"
                       >
                         {a.kind === 'image' ? (
-                          <ImageIcon size={12} className="shrink-0 text-[#6b8fb8]" />
+                          <ImageIcon size={12} className="shrink-0 text-[var(--faint)]" />
                         ) : (
-                          <FileText size={12} className="shrink-0 text-[#7a7a88]" />
+                          <FileText size={12} className="shrink-0 text-[var(--faint)]" />
                         )}
                         <span
-                          className="min-w-0 flex-1 text-[11.5px] text-[#c0c0cc] truncate"
+                          className="min-w-0 flex-1 text-[11.5px] text-[var(--muted)] truncate"
                           title={a.dir ? `${a.name}\n目录：${a.dir}` : a.name}
                         >
                           {a.name}
                         </span>
-                        <span className="shrink-0 text-[10px] text-[#4a4a58]">
+                        <span className="shrink-0 text-[10px] text-[var(--faint)]">
                           {a.size_text || (a.size ? `${(a.size / 1024).toFixed(0)}K` : '')}
                         </span>
                         {a.downloaded && a.file_id ? (
                           <div className="flex items-center gap-0.5 shrink-0">
                             <button
                               onClick={() => void openFile(a.file_id as number)}
-                              className="p-1 rounded text-[#7ee2b8] hover:bg-[#1e2a24]"
+                              className="p-1 rounded text-[var(--ok)] hover:bg-[color-mix(in_oklch,var(--ok)_14%,transparent)]"
                               title="打开文件"
                             >
                               <Check size={11} />
                             </button>
                             <button
                               onClick={() => void revealFile(a.file_id as number)}
-                              className="p-1 rounded text-[#6b6b7a] hover:bg-[#24242c] hover:text-[#c0c0cc]"
+                              className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--muted)]"
                               title="在文件夹中显示"
                             >
                               <FolderOpen size={11} />
@@ -209,7 +209,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                           <button
                             onClick={() => void doDownloadAll([a.key])}
                             disabled={downloading}
-                            className="shrink-0 p-1 rounded text-[#6b6b7a] hover:bg-[#24242c] hover:text-[#7db4ff] disabled:opacity-40"
+                            className="shrink-0 p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--accent-strong)] disabled:opacity-40"
                             title="下载"
                           >
                             <Download size={11} />
@@ -221,11 +221,11 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                 )}
 
                 {downloadHint && pendingCount > 0 && !attMsg && (
-                  <div className="mt-1 text-[10.5px] text-[#5c5c6a]">{downloadHint}</div>
+                  <div className="mt-1 text-[10.5px] text-[var(--faint)]">{downloadHint}</div>
                 )}
 
                 {attMsg && attachments.length > 0 && (
-                  <div className="mt-1 flex items-start gap-1 text-[10.5px] text-[#7a7a88]">
+                  <div className="mt-1 flex items-start gap-1 text-[10.5px] text-[var(--faint)]">
                     <AlertCircle size={10} className="mt-0.5 shrink-0" />
                     <span>{attMsg}</span>
                   </div>
@@ -247,7 +247,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                         setBusy(false)
                       }
                     }}
-                    className="flex items-center gap-1 text-[10.5px] text-[#6b6b7a] hover:text-[#4f8cff]"
+                    className="flex items-center gap-1 text-[10.5px] text-[var(--faint)] hover:text-[var(--accent-strong)]"
                   >
                     {busy ? <Loader2 size={10} className="animate-spin" /> : <Wand2 size={10} />}
                     生成摘要
@@ -261,7 +261,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
             </Block>
 
             <Block title="来源">
-              <span className="text-[#5c5c6a]">
+              <span className="text-[var(--faint)]">
                 {aiOn
                   ? `${task.platform} · ${task.status === 'done' ? '已完成' : task.status === 'expired' ? '已过期' : '待办'}`
                   : 'AI 展示已关闭'}
@@ -271,7 +271,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
         )}
       </div>
 
-      <div className="shrink-0 px-3 py-2 border-t border-[#24242c] text-[11px] text-[#4a4a58] flex items-center gap-1">
+      <div className="shrink-0 px-3 py-2 border-t border-[var(--border-soft)] text-[11px] text-[var(--faint)] flex items-center gap-1">
         <Info size={11} />
         附件按「平台/课程/任务」归档到工作区
       </div>
@@ -281,7 +281,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
 
 function Tag({ children }: { children: React.ReactNode }): React.JSX.Element {
   return (
-    <span className="px-1.5 py-0.5 rounded bg-[#24242c] text-[#9a9aa8]">{children}</span>
+    <span className="px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--faint)]">{children}</span>
   )
 }
 
@@ -297,10 +297,10 @@ function Block({
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
-        <span className="text-[11px] text-[#5c5c6a]">{title}</span>
+        <span className="text-[11px] text-[var(--faint)]">{title}</span>
         {action}
       </div>
-      <div className="p-2.5 rounded-md bg-[#1a1a20] border border-[#26262f] text-[12px] leading-relaxed text-[#b0b0be] whitespace-pre-wrap">
+      <div className="p-2.5 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[12px] leading-relaxed text-[var(--muted)] whitespace-pre-wrap">
         {children}
       </div>
     </div>

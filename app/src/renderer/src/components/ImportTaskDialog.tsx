@@ -59,12 +59,12 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[560px] max-h-[86vh] overflow-y-auto rounded-xl border border-[#2e2e38] bg-[#17171c] shadow-2xl">
-        <header className="flex items-center justify-between px-4 h-11 border-b border-[#26262f]">
-          <span className="flex items-center gap-1.5 text-[13px] text-[#e0e0e8]">
+      <div className="w-[560px] max-h-[86vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl">
+        <header className="flex items-center justify-between px-4 h-11 border-b border-[var(--border)]">
+          <span className="flex items-center gap-1.5 text-[13px] text-[var(--fg)]">
             <ListPlus size={14} /> 从文本导入任务
           </span>
-          <button onClick={onClose} className="text-[#7a7a88] hover:text-[#e0e0e8]">
+          <button onClick={onClose} className="text-[var(--faint)] hover:text-[var(--fg)]">
             <X size={15} />
           </button>
         </header>
@@ -75,27 +75,27 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
             onChange={(e) => setText(e.target.value)}
             rows={6}
             placeholder="把老师发的通知粘贴进来，例如：\n【高数】第三章习题请于10月25日23:59前提交，逾期不候"
-            className="w-full px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[12.5px] leading-relaxed outline-none focus:border-[#4f8cff] resize-none placeholder:text-[#3d3d48]"
+            className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[12.5px] leading-relaxed outline-none focus:border-[var(--accent)] resize-none placeholder:text-[var(--faint)]"
           />
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => void doExtract()}
               disabled={busy || !text.trim()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
               解析
             </button>
             {draft?.hint && (
-              <span className="text-[11px] text-[#e0b080] flex items-center gap-1">
+              <span className="text-[11px] text-[var(--warn)] flex items-center gap-1">
                 <AlertCircle size={11} /> {draft.hint}
               </span>
             )}
           </div>
 
           {draft && (
-            <div className="space-y-2 pt-2 border-t border-[#26262f]">
+            <div className="space-y-2 pt-2 border-t border-[var(--border)]">
               <Field label="标题">
                 <input
                   value={title}
@@ -109,7 +109,7 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
                     value={course}
                     onChange={(e) => setCourse(e.target.value)}
                     placeholder="可不填"
-                    className="w-full bg-transparent text-[12.5px] outline-none placeholder:text-[#3d3d48]"
+                    className="w-full bg-transparent text-[12.5px] outline-none placeholder:text-[var(--faint)]"
                   />
                 </Field>
                 <Field label="截止时间" className="flex-1">
@@ -117,20 +117,20 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
                     type="datetime-local"
                     value={ddl}
                     onChange={(e) => setDdl(e.target.value)}
-                    className="w-full bg-transparent text-[12px] text-[#d0d0da] outline-none [color-scheme:dark]"
+                    className="w-full bg-transparent text-[12px] text-[var(--fg)] outline-none [color-scheme:dark]"
                   />
                 </Field>
               </div>
 
               <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-[#5c5c6a]">
+                <span className="text-[11px] text-[var(--faint)]">
                   置信度 {Math.round((draft.confidence || 0) * 100)}% ·{' '}
                   {draft.engine === 'llm' ? 'AI 解析' : '本地规则'}
                 </span>
                 <button
                   onClick={() => void doConfirm()}
                   disabled={busy || !title.trim()}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-[#16302a] text-[#7ee2b8] text-[12px] disabled:opacity-40"
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] text-[12px] disabled:opacity-40"
                 >
                   <Check size={13} /> 确认添加
                 </button>
@@ -138,7 +138,7 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
             </div>
           )}
 
-          {error && <div className="text-[11.5px] text-[#ff9aa2] break-all">{error}</div>}
+          {error && <div className="text-[11.5px] text-[var(--danger)] break-all">{error}</div>}
         </div>
       </div>
     </div>
@@ -155,8 +155,8 @@ function Field({
   className?: string
 }): React.JSX.Element {
   return (
-    <label className={`block rounded-md bg-[#1a1a20] border border-[#2e2e38] px-2.5 py-1.5 ${className ?? ''}`}>
-      <div className="text-[10.5px] text-[#5c5c6a] mb-0.5">{label}</div>
+    <label className={`block rounded-md bg-[var(--surface)] border border-[var(--border)] px-2.5 py-1.5 ${className ?? ''}`}>
+      <div className="text-[10.5px] text-[var(--faint)] mb-0.5">{label}</div>
       {children}
     </label>
   )

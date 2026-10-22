@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react'
 
 interface Step {
   selector: string
@@ -36,7 +36,14 @@ const STEPS: Step[] = [
 
 const KEY = 'ca_guide_done'
 
-/** 引导式遮罩（模糊其余界面，聚焦单个入口） */
+/**
+ * 引导式遮罩（模糊其余界面，聚焦单个入口）。
+ *
+ * 三个必须守住的点：
+ * 1. 结束必须真的卸载 —— 之前只写 localStorage 不更新 state，按钮点了像没反应
+ * 2. 遮罩层 pointer-events:none，只有提示卡接收点击，避免吃掉整页交互
+ * 3. 目标元素的 rect 要等布局稳定后再测（平滑滚动会拿到旧位置，导致框选偏移）
+ */
 export default function GuideTour({
   force = false,
   onDone
@@ -46,104 +53,226 @@ export default function GuideTour({
 }): React.JSX.Element | null {
   const [index, setIndex] = useState(0)
   const [rect, setRect] = useState<DOMRect | null>(null)
+  const [closed, setClosed] = useState(false)
 
   const step = STEPS[index]
 
+  const finish = useCallback((): void => {
+    localStorage.setItem(KEY, '1')
+    setClosed(true)
+    onDone?.()
+  }, [onDone])
+
+  const next = useCallback((): void => {
+    if (index < STEPS.length - 1) {
+      setIndex(index + 1)
+    } else {
+      localStorage.setItem(KEY, '1')
+      setClosed(true)
+      onDone?.()
+    }
+  }, [index, onDone])
+
+  // 测量目标位置：跳过不可见元素，等两帧让滚动/布局稳定
   useLayoutEffect(() => {
-    const el = document.querySelector(step.selector)
+    if (closed) return
+
+    const list = Array.from(document.querySelectorAll(step.selector))
+    const el =
+      list.find((n) => {
+        const r = n.getBoundingClientRect()
+        return r.width > 0 && r.height > 0
+      }) ?? null
+
     if (!el) {
-      // 目标不在当前页面：跳过这一步
+      // 目标不在当前页面：跳到下一步，不卡在这一屏
       if (index < STEPS.length - 1) setIndex(index + 1)
       else finish()
       return
     }
-    el.scrollIntoView({ block: 'center', behavior: 'smooth' })
-    const r = el.getBoundingClientRect()
-    setRect(r)
 
-    const onResize = (): void => setRect(el.getBoundingClientRect())
-    window.addEventListener('resize', onResize)
-    return () => window.removeEventListener('resize', onResize)
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+
+    let raf1 = 0
+    let raf2 = 0
+    const measure = (): void => setRect(el.getBoundingClientRect())
+
+    raf1 = requestAnimationFrame(() => {
+      measure()
+      raf2 = requestAnimationFrame(measure)
+    })
+
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    window.addEventListener('resize', measure)
+    window.addEventListener('scroll', measure, true)
+
+    return () => {
+      cancelAnimationFrame(raf1)
+      cancelAnimationFrame(raf2)
+      ro.disconnect()
+      window.removeEventListener('resize', measure)
+      window.removeEventListener('scroll', measure, true)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index, step.selector])
+  }, [index, step?.selector, closed])
 
+  // 键盘：Esc 跳过，Enter/→ 下一步
   useEffect(() => {
+    if (closed) return
     const onKey = (e: KeyboardEvent): void => {
       if (e.key === 'Escape') finish()
-      if (e.key === 'Enter') next()
+      if (e.key === 'Enter' || e.key === 'ArrowRight') next()
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [index])
+  }, [closed, finish, next])
 
-  const finish = (): void => {
-    localStorage.setItem(KEY, '1')
-    onDone?.()
-  }
-
-  const next = (): void => {
-    if (index < STEPS.length - 1) setIndex(index + 1)
-    else finish()
-  }
-
+  if (closed) return null
   if (!force && localStorage.getItem(KEY) === '1') return null
   if (!rect) return null
 
   const pad = 6
   const spot = {
-    top: rect.top - pad,
-    left: rect.left - pad,
+    top: Math.max(4, rect.top - pad),
+    left: Math.max(4, rect.left - pad),
     width: rect.width + pad * 2,
     height: rect.height + pad * 2
   }
 
-  // 提示框位置
-  const tooltipW = 300
-  let tipStyle: React.CSSProperties = { width: tooltipW }
+  // 提示卡定位：按声明的方向放，越界时自动翻转到另一侧
+  const tipW = 306
+  const tipH = 170
+  const vw = window.innerWidth
+  const vh = window.innerHeight
+  const clamp = (v: number, min: number, max: number): number => Math.min(Math.max(v, min), max)
+
+  let top = spot.top + spot.height + 14
+  let left = spot.left
+
   if (step.place === 'right') {
-    tipStyle = { ...tipStyle, left: Math.min(spot.left + spot.width + 14, window.innerWidth - tooltipW - 20), top: Math.min(spot.top, window.innerHeight - 200) }
+    left = spot.left + spot.width + 14
+    if (left + tipW > vw - 12) {
+      const flipped = spot.left - tipW - 14
+      left = flipped >= 12 ? flipped : clamp(spot.left, 12, vw - tipW - 12)
+    }
+    top = spot.top
   } else if (step.place === 'left') {
-    tipStyle = { ...tipStyle, left: Math.max(spot.left - tooltipW - 14, 16), top: spot.top }
+    left = spot.left - tipW - 14
+    if (left < 12) left = clamp(spot.left + spot.width + 14, 12, vw - tipW - 12)
+    top = spot.top
   } else if (step.place === 'top') {
-    tipStyle = { ...tipStyle, left: Math.max(16, spot.left), top: Math.max(16, spot.top - 170) }
+    top = spot.top - tipH - 14
+    if (top < 12) top = spot.top + spot.height + 14
+    left = spot.left
   } else {
-    tipStyle = { ...tipStyle, left: Math.max(16, Math.min(spot.left, window.innerWidth - tooltipW - 20)), top: spot.top + spot.height + 14 }
+    top = spot.top + spot.height + 14
+    if (top + tipH > vh - 12) top = spot.top - tipH - 14
+    left = spot.left
   }
 
+  top = clamp(top, 12, Math.max(12, vh - tipH - 12))
+  left = clamp(left, 12, Math.max(12, vw - tipW - 12))
+
+  const isLast = index === STEPS.length - 1
+
   return (
-    <div className="fixed inset-0 z-[9999]">
-      {/* 遮罩：用超大 box-shadow 做出挖洞效果 */}
+    <div className="fixed inset-0 z-[9999] pointer-events-none">
+      {/* 挖洞高亮：外圈用超大 shadow 压暗，本身不接收点击 */}
       <div
-        className="absolute rounded-lg pointer-events-none"
+        className="absolute rounded-xl pointer-events-none transition-all duration-200"
         style={{
-          ...spot,
-          boxShadow: '0 0 0 9999px rgba(0,0,0,0.62)',
-          border: '2px solid #4f8cff'
+          top: spot.top,
+          left: spot.left,
+          width: spot.width,
+          height: spot.height,
+          boxShadow: '0 0 0 9999px rgb(0 0 0 / 0.55)',
+          border: '2px solid var(--accent)',
+          background: 'transparent'
         }}
       />
 
+      {/* 提示卡：唯一可交互区域 */}
       <div
-        className="absolute rounded-xl border border-[#33405a] bg-[#171b24] p-3.5 shadow-2xl"
-        style={tipStyle}
+        className="absolute pointer-events-auto rounded-xl p-4 transition-all duration-200"
+        style={{
+          top,
+          left,
+          width: tipW,
+          background: 'var(--surface)',
+          border: '1px solid var(--border)',
+          boxShadow: 'var(--shadow)',
+          color: 'var(--fg)'
+        }}
       >
-        <div className="text-[13px] text-[#e8e8ec] mb-1.5">{step.title}</div>
-        <div className="text-[11.5px] text-[#9a9aa8] leading-relaxed whitespace-pre-line">
-          {step.text}
-        </div>
-        <div className="flex items-center justify-between mt-3">
-          <span className="text-[10.5px] text-[#4a4a58]">
+        <div className="mb-2 flex items-center justify-between">
+          <span
+            className="text-[13px] font-semibold"
+            style={{ fontFamily: 'var(--font-display)' }}
+          >
+            {step.title}
+          </span>
+          <span
+            className="text-[10.5px] tabular-nums"
+            style={{ color: 'var(--faint)', fontFamily: 'var(--font-mono)' }}
+          >
             {index + 1} / {STEPS.length}
           </span>
+        </div>
+
+        <div
+          className="whitespace-pre-line text-[12px] leading-relaxed"
+          style={{ color: 'var(--muted)' }}
+        >
+          {step.text}
+        </div>
+
+        <div className="mt-4 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={finish}
+            className="cursor-pointer rounded-md px-1.5 py-1 text-[11.5px] transition-colors"
+            style={{ color: 'var(--faint)', background: 'transparent' }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = 'var(--fg)'
+              e.currentTarget.style.background = 'var(--surface-2)'
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = 'var(--faint)'
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            跳过
+          </button>
+
           <div className="flex items-center gap-2">
-            <button onClick={finish} className="text-[11px] text-[#6b6b7a] hover:text-[#c0c0cc]">
-              跳过
-            </button>
+            {index > 0 && (
+              <button
+                type="button"
+                onClick={() => setIndex(Math.max(0, index - 1))}
+                className="cursor-pointer rounded-md px-2 py-1 text-[11.5px] transition-colors"
+                style={{ color: 'var(--muted)', background: 'transparent' }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = 'var(--surface-2)'
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = 'transparent'
+                }}
+              >
+                上一步
+              </button>
+            )}
             <button
+              type="button"
               onClick={next}
-              className="px-2.5 py-1 rounded-md bg-[#4f8cff] text-white text-[11.5px]"
+              className="cursor-pointer rounded-lg px-3 py-1.5 text-[11.5px] font-medium transition-transform active:scale-[0.97]"
+              style={{
+                background: 'var(--primary-bg)',
+                color: 'var(--primary-fg)',
+                border: '1px solid var(--border)'
+              }}
             >
-              {index < STEPS.length - 1 ? '下一步' : '开始使用'}
+              {isLast ? '开始使用' : '下一步'}
             </button>
           </div>
         </div>

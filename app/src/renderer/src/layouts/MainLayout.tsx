@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
-import Sidebar from '../components/Sidebar'
+import Sidebar, { type SyncStatus } from '../components/Sidebar'
 import TopBar from '../components/TopBar'
 import AiPanel from '../components/AiPanel'
 import TasksPage from '../pages/TasksPage'
@@ -9,7 +9,13 @@ import AgentPage from '../pages/AgentPage'
 import FilesPage from '../pages/FilesPage'
 import SettingsPage from '../pages/SettingsPage'
 import type { PageKey } from '../lib/ui'
-import { workspaceInfo, wechatStatus, type Task } from '../lib/api'
+import {
+  adaptersStatus,
+  aiStatus,
+  wechatStatus,
+  workspaceInfo,
+  type Task
+} from '../lib/api'
 
 interface Props {
   page: PageKey
@@ -27,13 +33,56 @@ const TITLES: Record<PageKey, string> = {
   settings: '设置'
 }
 
-function MainLayout({ page, onPageChange, theme, onToggleTheme, onOpenLogin }: Props): React.JSX.Element {
+const EMPTY_STATUS: SyncStatus = {
+  chaoxing: false,
+  xiaoya: false,
+  wechat: 'not_configured',
+  ai: false
+}
+
+function MainLayout({
+  page,
+  onPageChange,
+  theme,
+  onToggleTheme,
+  onOpenLogin
+}: Props): React.JSX.Element {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [aiPanelVisible, setAiPanelVisible] = useState(true)
   const [platforms, setPlatforms] = useState<string[]>(['chaoxing', 'xiaoya', 'wechat', 'manual'])
+  const [workspaceRoot, setWorkspaceRoot] = useState('')
+  const [status, setStatus] = useState<SyncStatus>(EMPTY_STATUS)
+
+  // 侧栏与底栏共享的连接状态（只读，不改变任何业务逻辑）
+  useEffect(() => {
+    void (async () => {
+      try {
+        const w = await workspaceInfo()
+        setWorkspaceRoot(w.root)
+      } catch {
+        /* 后端未就绪 */
+      }
+
+      const [adapters, wechat, ai] = await Promise.allSettled([
+        adaptersStatus(),
+        wechatStatus(),
+        aiStatus()
+      ])
+
+      setStatus({
+        chaoxing: adapters.status === 'fulfilled' ? adapters.value.chaoxing.logged_in : false,
+        xiaoya: adapters.status === 'fulfilled' ? adapters.value.xiaoya.logged_in : false,
+        wechat:
+          wechat.status === 'fulfilled'
+            ? wechat.value.listener.state
+            : ('not_configured' as SyncStatus['wechat']),
+        ai: ai.status === 'fulfilled' ? ai.value.configured : false
+      })
+    })()
+  }, [])
 
   return (
-    <div className="h-full flex flex-col bg-[#16161a] text-[#e8e8ec]">
+    <div className="app">
       <TopBar
         title={TITLES[page]}
         theme={theme}
@@ -43,81 +92,75 @@ function MainLayout({ page, onPageChange, theme, onToggleTheme, onOpenLogin }: P
         onOpenLogin={onOpenLogin}
       />
 
-      <PanelGroup direction="horizontal" className="flex-1 min-h-0">
-        <Panel defaultSize={18} minSize={12} maxSize={26}>
-          <Sidebar
-            current={page}
-            onChange={onPageChange}
-            platforms={platforms}
-            onTogglePlatform={(k) =>
-              setPlatforms((prev) => (prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]))
-            }
-          />
-        </Panel>
+      <div className="workspace">
+        <PanelGroup direction="horizontal" className="panels">
+          <Panel defaultSize={17} minSize={12} maxSize={30}>
+            <Sidebar
+              current={page}
+              onChange={onPageChange}
+              platforms={platforms}
+              onTogglePlatform={(k) =>
+                setPlatforms((prev) =>
+                  prev.includes(k) ? prev.filter((x) => x !== k) : [...prev, k]
+                )
+              }
+              workspaceRoot={workspaceRoot}
+              status={status}
+            />
+          </Panel>
 
-        <PanelResizeHandle className="w-[1px] bg-[#2a2a34] hover:bg-[#4f8cff] transition-colors" />
+          <PanelResizeHandle className="handle" />
 
-        <Panel minSize={40}>
-          <main className="h-full overflow-y-auto px-6 py-5">
-            {page === 'tasks' && (
-              <TasksPage
-                onSelectTask={setSelectedTask}
-                selectedTaskId={selectedTask?.id}
-                platforms={platforms}
-              />
-            )}
-            {page === 'calendar' && <CalendarPage />}
-            {page === 'agent' && <AgentPage />}
-            {page === 'files' && <FilesPage />}
-            {page === 'settings' && <SettingsPage />}
-          </main>
-        </Panel>
+          <Panel minSize={38}>
+            <div className="main-panel">
+              <main className="page-scroll">
+                {page === 'tasks' && (
+                  <TasksPage
+                    onSelectTask={setSelectedTask}
+                    selectedTaskId={selectedTask?.id}
+                    platforms={platforms}
+                  />
+                )}
+                {page === 'calendar' && <CalendarPage onNavigate={onPageChange} />}
+                {page === 'agent' && <AgentPage />}
+                {page === 'files' && <FilesPage />}
+                {page === 'settings' && <SettingsPage />}
+              </main>
+            </div>
+          </Panel>
 
-        {aiPanelVisible && page !== 'files' && page !== 'settings' && (
-          <>
-            <PanelResizeHandle className="w-[1px] bg-[#2a2a34] hover:bg-[#4f8cff] transition-colors" />
-            <Panel defaultSize={26} minSize={18} maxSize={40}>
-              <AiPanel task={selectedTask} />
-            </Panel>
-          </>
-        )}
-      </PanelGroup>
+          {aiPanelVisible && page !== 'files' && page !== 'settings' && (
+            <>
+              <PanelResizeHandle className="handle" />
+              <Panel defaultSize={25} minSize={16} maxSize={40}>
+                <div className="ai-panel">
+                  <AiPanel task={selectedTask} />
+                </div>
+              </Panel>
+            </>
+          )}
+        </PanelGroup>
+      </div>
 
-      <FooterBar />
+      <StatusBar root={workspaceRoot} status={status} />
     </div>
   )
 }
 
-function FooterBar(): React.JSX.Element {
-  const [root, setRoot] = useState('')
-  const [wechat, setWechat] = useState('')
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const w = await workspaceInfo()
-        setRoot(w.root)
-      } catch {
-        /* 忽略 */
-      }
-      try {
-        const s = await wechatStatus()
-        const st = s.listener.state
-        setWechat(
-          st === 'running' ? `监听中 · ${s.listener.groups.length || '全部'} 群` : st === 'offline' ? '未启动' : '未配置'
-        )
-      } catch {
-        /* 忽略 */
-      }
-    })()
-  }, [])
+function StatusBar({ root, status }: { root: string; status: SyncStatus }): React.JSX.Element {
+  const wechatText =
+    status.wechat === 'running' ? '监听中' : status.wechat === 'offline' ? '未启动' : '未配置'
 
   return (
-    <div className="h-8 shrink-0 flex items-center justify-between gap-4 px-4 text-[11px] text-[#6b6b7a] border-t border-[#24242c] bg-[#131317]">
-      <span className="truncate" title={root}>
-        工作区：{root || '未配置'}
-      </span>
-      <span className="shrink-0">微信：{wechat || '检测中…'}</span>
+    <div className="statusbar">
+      <div className="status-left">
+        <span title={root}>工作区：{root || '未配置'}</span>
+      </div>
+      <div className="status-right">
+        <span>微信：{wechatText}</span>
+        <span className="status-sep" aria-hidden="true" />
+        <span>AI：{status.ai ? '已连接' : '未配置'}</span>
+      </div>
     </div>
   )
 }

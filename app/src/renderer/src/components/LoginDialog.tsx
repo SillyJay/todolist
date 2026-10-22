@@ -53,10 +53,10 @@ export default function LoginDialog({ onClose, onChanged }: Props): React.JSX.El
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[520px] max-h-[86vh] overflow-y-auto rounded-xl border border-[#2e2e38] bg-[#17171c] shadow-2xl">
-        <header className="flex items-center justify-between px-4 h-11 border-b border-[#26262f]">
-          <span className="text-[13px] text-[#e0e0e8]">账号登录</span>
-          <button onClick={onClose} className="text-[#7a7a88] hover:text-[#e0e0e8]">
+      <div className="w-[520px] max-h-[86vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl">
+        <header className="flex items-center justify-between px-4 h-11 border-b border-[var(--border)]">
+          <span className="text-[13px] text-[var(--fg)]">账号登录</span>
+          <button onClick={onClose} className="text-[var(--faint)] hover:text-[var(--fg)]">
             <X size={15} />
           </button>
         </header>
@@ -107,12 +107,12 @@ function TabBtn({
     <button
       onClick={onClick}
       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-colors ${
-        active ? 'bg-[#242430] text-[#e8e8ec]' : 'text-[#8a8a98] hover:text-[#c0c0cc]'
+        active ? 'bg-[var(--surface-3)] text-[var(--fg)]' : 'text-[var(--faint)] hover:text-[var(--muted)]'
       }`}
     >
       {icon}
       {label}
-      <span className={`w-1.5 h-1.5 rounded-full ${loggedIn ? 'bg-[#22c55e]' : 'bg-[#4a4a58]'}`} />
+      <span className={`w-1.5 h-1.5 rounded-full ${loggedIn ? 'bg-[var(--ok)]' : 'bg-[var(--faint)]'}`} />
     </button>
   )
 }
@@ -197,7 +197,7 @@ function ChaoxingPanel({
     <div className="space-y-3">
       {loggedIn ? (
         <>
-          <div className="flex items-center gap-2 text-[12px] text-[#7ee2b8]">
+          <div className="flex items-center gap-2 text-[12px] text-[var(--ok)]">
             <Check size={13} /> 学习通已登录
           </div>
 
@@ -205,7 +205,7 @@ function ChaoxingPanel({
           <button
             onClick={() => void doRefresh()}
             disabled={progress?.running}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff] disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50"
           >
             {progress?.running ? (
               <Loader2 size={13} className="animate-spin" />
@@ -221,7 +221,7 @@ function ChaoxingPanel({
               const r = await chaoxingRefreshSchedule()
               setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '课表已同步' : '课表同步失败') })
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)]"
           >
             <CalendarDays size={13} />
             同步课表（约 1 秒）
@@ -229,18 +229,18 @@ function ChaoxingPanel({
           </div>
 
           {progress && (
-            <div className="text-[11.5px] text-[#8a8a98]">
+            <div className="text-[11.5px] text-[var(--faint)]">
               {progress.running ? (
                 <>
                   <div className="flex items-center justify-between mb-1">
                     <span>
                       正在抓取 {progress.done}/{progress.total || '?'} 门课
                     </span>
-                    <span className="text-[#5c5c6a]">{progress.current}</span>
+                    <span className="text-[var(--faint)]">{progress.current}</span>
                   </div>
-                  <div className="h-1 rounded bg-[#24242c] overflow-hidden">
+                  <div className="h-1 rounded bg-[var(--surface-3)] overflow-hidden">
                     <div
-                      className="h-full bg-[#4f8cff] transition-all"
+                      className="h-full bg-[var(--accent)] transition-all"
                       style={{
                         width: `${progress.total ? (progress.done / progress.total) * 100 : 5}%`
                       }}
@@ -248,7 +248,7 @@ function ChaoxingPanel({
                   </div>
                 </>
               ) : progress.error ? (
-                <span className="text-[#ff9aa2]">同步失败：{progress.error}</span>
+                <span className="text-[var(--danger)]">同步失败：{progress.error}</span>
               ) : (
                 <span>
                   同步完成：新增 {progress.created} 条，更新 {progress.updated} 条
@@ -264,7 +264,7 @@ function ChaoxingPanel({
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="手机号 / 学号"
-              className="w-full px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px] outline-none focus:border-[#4f8cff] placeholder:text-[#4a4a58]"
+              className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
             />
             <input
               type="password"
@@ -272,7 +272,7 @@ function ChaoxingPanel({
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void doLogin()}
               placeholder="密码"
-              className="w-full px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px] outline-none focus:border-[#4f8cff] placeholder:text-[#4a4a58]"
+              className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
             />
           </div>
 
@@ -280,7 +280,7 @@ function ChaoxingPanel({
             <button
               onClick={() => void doLogin()}
               disabled={busy || !username || !password}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
             >
               {busy ? <Loader2 size={13} className="animate-spin" /> : <LogIn size={13} />}
               登录
@@ -297,14 +297,14 @@ function ChaoxingPanel({
                   setBusy(false)
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#9a9aa8] hover:text-[#e0e0e8]"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--fg)]"
               title="遇到验证码时用这个：弹出浏览器窗口，登录完关闭即可"
             >
               <Globe size={13} /> 验证码？内置浏览器登录
             </button>
             <button
               onClick={() => setCookieMode((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#6b6b7a] hover:text-[#c0c0cc]"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--muted)]"
             >
               <Cookie size={13} /> 手动 Cookie
             </button>
@@ -312,21 +312,21 @@ function ChaoxingPanel({
 
           {cookieMode && (
             <div className="space-y-2">
-              <div className="text-[11px] text-[#6b6b7a] leading-relaxed">
+              <div className="text-[11px] text-[var(--faint)] leading-relaxed">
                 浏览器登录 i.chaoxing.com → F12 → Application → Cookies，
-                复制整行（形如 <code className="text-[#9a9aa8]">_uid=...; _d=...; uf=...</code>）
+                复制整行（形如 <code className="text-[var(--faint)]">_uid=...; _d=...; uf=...</code>）
               </div>
               <textarea
                 value={cookieText}
                 onChange={(e) => setCookieText(e.target.value)}
                 rows={3}
                 placeholder="_uid=...; _d=...; uf=..."
-                className="w-full px-2.5 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] resize-none placeholder:text-[#3d3d48]"
+                className="w-full px-2.5 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] resize-none placeholder:text-[var(--faint)]"
               />
               <button
                 onClick={() => void doCookie()}
                 disabled={busy || !cookieText.trim()}
-                className="px-3 py-1.5 rounded-md bg-[#242430] text-[12px] text-[#d0d0da] disabled:opacity-40"
+                className="px-3 py-1.5 rounded-md bg-[var(--surface-3)] text-[12px] text-[var(--fg)] disabled:opacity-40"
               >
                 导入 Cookie
               </button>
@@ -338,7 +338,7 @@ function ChaoxingPanel({
       {msg && (
         <div
           className={`flex items-start gap-1.5 text-[11.5px] ${
-            msg.ok ? 'text-[#7ee2b8]' : 'text-[#ff9aa2]'
+            msg.ok ? 'text-[var(--ok)]' : 'text-[var(--danger)]'
           }`}
         >
           {msg.ok ? <Check size={12} className="mt-0.5" /> : <AlertCircle size={12} className="mt-0.5" />}
@@ -376,9 +376,9 @@ function XiaoyaPanel({
 
   return (
     <div className="space-y-3">
-      <div className="text-[11.5px] text-[#6b6b7a] leading-relaxed">
+      <div className="text-[11.5px] text-[var(--faint)] leading-relaxed">
         小雅登录需要短信/图形验证，用内置浏览器最省事：点下面按钮 →
-        弹出登录页 → 正常登录 → <span className="text-[#9a9aa8]">关闭窗口</span>
+        弹出登录页 → 正常登录 → <span className="text-[var(--faint)]">关闭窗口</span>
         → 程序自动读取 Cookie。全程只读，不会代交作业。
       </div>
 
@@ -395,14 +395,14 @@ function XiaoyaPanel({
           }
         }}
         disabled={busy}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-50"
+        className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-50"
       >
         <Globe size={13} /> 用内置浏览器登录
       </button>
 
       {loggedIn && (
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 text-[12px] text-[#7ee2b8]">
+          <div className="flex items-center gap-2 text-[12px] text-[var(--ok)]">
             <Check size={13} /> 已登录
           </div>
           <button
@@ -423,7 +423,7 @@ function XiaoyaPanel({
               }
             }}
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff] disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
             同步作业（约 3 秒）
@@ -436,21 +436,21 @@ function XiaoyaPanel({
         onChange={(e) => setCookieText(e.target.value)}
         rows={3}
         placeholder="粘贴 xiaoya.iflytek.com 的 Cookie"
-        className="w-full px-2.5 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] resize-none placeholder:text-[#3d3d48]"
+        className="w-full px-2.5 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] resize-none placeholder:text-[var(--faint)]"
       />
 
       <div className="flex items-center gap-2">
         <button
           onClick={() => void doCookie()}
           disabled={busy || !cookieText.trim()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[#2e2e38] text-[12px] text-[#9a9aa8] hover:text-[#e0e0e8] disabled:opacity-40"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--fg)] disabled:opacity-40"
         >
           <Cookie size={13} /> 手动粘贴 Cookie
         </button>
       </div>
 
       {msg && (
-        <div className={`text-[11.5px] ${msg.ok ? 'text-[#7ee2b8]' : 'text-[#ffb08a]'}`}>
+        <div className={`text-[11.5px] ${msg.ok ? 'text-[var(--ok)]' : 'text-[var(--warn)]'}`}>
           {msg.text}
         </div>
       )}

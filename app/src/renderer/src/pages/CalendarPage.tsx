@@ -8,7 +8,8 @@ import {
   Upload,
   Download,
   Settings2,
-  Check
+  Check,
+  Info
 } from 'lucide-react'
 import { weeksContain, weekOfDate } from '../lib/weeks'
 import {
@@ -17,6 +18,7 @@ import {
   createPlan,
   updatePlan,
   deletePlan,
+  adaptersStatus,
   scheduleOf,
   scheduleAll,
   scheduleMeta,
@@ -42,33 +44,33 @@ export const QUADRANTS: Record<
     key: 'q1',
     name: '紧急且重要',
     short: '紧急重要',
-    color: '#ef4444',
-    bg: 'rgba(239,68,68,0.16)',
-    text: '#ffb4b4'
+    color: 'var(--q1)',
+    bg: 'var(--q1-bg)',
+    text: 'var(--q1-text)'
   },
   q2: {
     key: 'q2',
     name: '重要不紧急',
     short: '重要',
-    color: '#3b82f6',
-    bg: 'rgba(59,130,246,0.16)',
-    text: '#a9c9ff'
+    color: 'var(--q2)',
+    bg: 'var(--q2-bg)',
+    text: 'var(--q2-text)'
   },
   q3: {
     key: 'q3',
     name: '紧急不重要',
     short: '紧急',
-    color: '#f59e0b',
-    bg: 'rgba(245,158,11,0.16)',
-    text: '#ffd79a'
+    color: 'var(--q3)',
+    bg: 'var(--q3-bg)',
+    text: 'var(--q3-text)'
   },
   q4: {
     key: 'q4',
     name: '不紧急不重要',
     short: '常规',
-    color: '#94a3b8',
-    bg: 'rgba(148,163,184,0.14)',
-    text: '#cfd8e3'
+    color: 'var(--q4)',
+    bg: 'var(--q4-bg)',
+    text: 'var(--q4-text)'
   }
 }
 const qOf = (k?: string | null): (typeof QUADRANTS)['q1'] => QUADRANTS[k || 'q2'] ?? QUADRANTS.q2
@@ -84,7 +86,11 @@ const textToMin = (t: string): number => {
 
 type ViewMode = 'month' | 'week' | 'list'
 
-function CalendarPage(): React.JSX.Element {
+function CalendarPage({
+  onNavigate
+}: {
+  onNavigate?: (p: 'settings') => void
+} = {}): React.JSX.Element {
   const today = useMemo(() => new Date(), [])
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selected, setSelected] = useState<string>(ymd(today))
@@ -96,6 +102,7 @@ function CalendarPage(): React.JSX.Element {
   const [coursesAll, setCoursesAll] = useState<WeekCourse[]>([])
   const [weekNo, setWeekNo] = useState<number | null>(null)
   const [firstWeekDate, setFirstWeekDate] = useState<string | null>(null)
+  const [chaoxingLogged, setChaoxingLogged] = useState(true) // 默认不打扰，查到未登录才提示
   const [toast, setToast] = useState('')
   const [formOpen, setFormOpen] = useState(false)
 
@@ -128,6 +135,11 @@ function CalendarPage(): React.JSX.Element {
     void scheduleMeta()
       .then((m) => setWeekNo(m.current_week))
       .catch(() => setWeekNo(null))
+    void adaptersStatus()
+      .then((st) => setChaoxingLogged(!!st.chaoxing?.logged_in))
+      .catch(() => {
+        /* 后端未就绪时不提示 */
+      })
   }, [reloadInfos, reloadPlans])
 
   useEffect(() => {
@@ -181,10 +193,12 @@ function CalendarPage(): React.JSX.Element {
     return null
   }, [today, infos])
 
-  const weekStart = useMemo(
-    () => addDays(cursor, -((cursor.getDay() + 6) % 7)),
-    [cursor]
-  )
+  // 周视图以「选中日期」为基准（而不是月历的月初），否则会显示成上个月那一周
+  const weekStart = useMemo(() => {
+    const base = new Date(`${selected}T00:00:00`)
+    const d = Number.isNaN(base.getTime()) ? today : base
+    return addDays(d, -((d.getDay() + 6) % 7))
+  }, [selected, today])
 
   const cells = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
@@ -225,12 +239,12 @@ function CalendarPage(): React.JSX.Element {
   }
 
   return (
-    <div className="flex gap-3 h-[calc(100vh-116px)] min-h-[580px]">
+    <div className="flex gap-3 h-full min-h-0">
       {/* ============ 主区 ============ */}
       <div className="flex-1 min-w-0 flex flex-col gap-2.5">
         {/* 工具栏 */}
         <div className="flex items-center gap-2">
-          <div className="flex rounded-md border border-[#2e2e38] overflow-hidden">
+          <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
             {(
               [
                 ['month', '月'],
@@ -242,7 +256,7 @@ function CalendarPage(): React.JSX.Element {
                 key={k}
                 onClick={() => setView(k)}
                 className={`px-3 py-1 text-[12px] transition-colors ${
-                  view === k ? 'bg-[#242430] text-[#e8e8ec]' : 'text-[#8a8a98] hover:text-[#c0c0cc]'
+                  view === k ? 'bg-[var(--surface-3)] text-[var(--fg)]' : 'text-[var(--faint)] hover:text-[var(--muted)]'
                 }`}
               >
                 {label}
@@ -253,14 +267,14 @@ function CalendarPage(): React.JSX.Element {
           <button
             onClick={() =>
               view === 'week'
-                ? setCursor(addDays(cursor, -7))
+                ? setSelected(ymd(addDays(weekStart, -7)))
                 : setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
             }
-            className="p-1 rounded text-[#8a8a98] hover:text-[#e0e0e8] hover:bg-[#1c1c22]"
+            className="p-1 rounded text-[var(--faint)] hover:text-[var(--fg)] hover:bg-[var(--surface-2)]"
           >
             <ChevronLeft size={15} />
           </button>
-          <span className="text-[13.5px] text-[#e0e0e8] min-w-[120px] text-center">
+          <span className="text-[13.5px] text-[var(--fg)] min-w-[120px] text-center">
             {view === 'week'
               ? `${weekStart.getMonth() + 1}/${weekStart.getDate()} – ${addDays(weekStart, 6).getMonth() + 1}/${addDays(weekStart, 6).getDate()}`
               : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`}
@@ -268,10 +282,10 @@ function CalendarPage(): React.JSX.Element {
           <button
             onClick={() =>
               view === 'week'
-                ? setCursor(addDays(cursor, 7))
+                ? setSelected(ymd(addDays(weekStart, 7)))
                 : setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
             }
-            className="p-1 rounded text-[#8a8a98] hover:text-[#e0e0e8] hover:bg-[#1c1c22]"
+            className="p-1 rounded text-[var(--faint)] hover:text-[var(--fg)] hover:bg-[var(--surface-2)]"
           >
             <ChevronRight size={15} />
           </button>
@@ -280,13 +294,13 @@ function CalendarPage(): React.JSX.Element {
               setCursor(new Date(today.getFullYear(), today.getMonth(), 1))
               setSelected(ymd(today))
             }}
-            className="px-2 py-1 rounded text-[11.5px] text-[#8a8a98] border border-[#2e2e38] hover:text-[#e0e0e8]"
+            className="px-2 py-1 rounded text-[11.5px] text-[var(--faint)] border border-[var(--border)] hover:text-[var(--fg)]"
           >
             今天
           </button>
 
           {weekNo != null && (
-            <span className="px-1.5 py-0.5 rounded text-[11px] bg-[#1e2432] text-[#7db4ff]">
+            <span className="px-1.5 py-0.5 rounded text-[11px] bg-[var(--accent-soft)] text-[var(--accent-strong)]">
               第 {weekNo} 周
             </span>
           )}
@@ -301,19 +315,19 @@ function CalendarPage(): React.JSX.Element {
                 setCoursesAll(all.items)
                 setWeekNo(meta.current_week)
               }}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[#8a8a98] border border-[#2e2e38] hover:text-[#e0e0e8]"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[var(--faint)] border border-[var(--border)] hover:text-[var(--fg)]"
             >
               <Upload size={12} /> 导入课表
             </button>
             <button
               onClick={() => void doExport()}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[#8a8a98] border border-[#2e2e38] hover:text-[#e0e0e8]"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[var(--faint)] border border-[var(--border)] hover:text-[var(--fg)]"
             >
               <Download size={12} /> 导出 ics
             </button>
             <button
               onClick={() => setFormOpen((v) => !v)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded text-[11.5px] bg-[#4f8cff] text-white"
+              className="flex items-center gap-1 px-2.5 py-1 rounded text-[11.5px] bg-[var(--accent)] text-white"
             >
               <Plus size={12} /> 新建日程
             </button>
@@ -331,11 +345,41 @@ function CalendarPage(): React.JSX.Element {
           />
         )}
 
+        {/* 未接入课表时的引导（不打扰已登录用户） */}
+        {!chaoxingLogged && coursesAll.length === 0 && (
+          <div
+            className="flex shrink-0 items-center gap-2.5 rounded-xl border px-3 py-2 text-[11.5px]"
+            style={{
+              background: 'color-mix(in oklch,var(--accent) 10%,transparent)',
+              borderColor: 'color-mix(in oklch,var(--accent) 28%,transparent)',
+              color: 'var(--muted)'
+            }}
+          >
+            <Info size={13} style={{ color: 'var(--accent-strong)', flex: 'none' }} />
+            <span className="min-w-0 flex-1">
+              还没有课表数据。登录学习通后会自动同步本学期课程，周视图和日视图就能看到每天在哪上课。
+            </span>
+            {onNavigate && (
+              <button
+                onClick={() => onNavigate('settings')}
+                className="shrink-0 cursor-pointer rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
+                style={{
+                  background: 'var(--primary-bg)',
+                  color: 'var(--primary-fg)',
+                  border: '1px solid var(--border)'
+                }}
+              >
+                去设置登录
+              </button>
+            )}
+          </div>
+        )}
+
         {/* 月历 / 列表 */}
         {view === 'month' ? (
-          <div className="grid grid-cols-7 gap-px bg-[#26262f] rounded-lg overflow-hidden border border-[#26262f] shrink-0">
+          <div className="grid grid-cols-7 gap-px bg-[#26262f] rounded-lg overflow-hidden border border-[var(--border)] shrink-0">
             {WEEK_CN.map((w) => (
-              <div key={w} className="bg-[#131317] py-1.5 text-center text-[11px] text-[#6b6b7a]">
+              <div key={w} className="bg-[var(--bg-deep)] py-1.5 text-center text-[11px] text-[var(--faint)]">
                 周{w}
               </div>
             ))}
@@ -353,33 +397,33 @@ function CalendarPage(): React.JSX.Element {
                   onClick={() => setSelected(key)}
                   className={`relative h-[78px] px-1.5 pt-1 text-left align-top transition-colors ${
                     isSel
-                      ? 'bg-[#1e2432]'
+                      ? 'bg-[var(--accent-soft)]'
                       : info?.is_holiday && inMonth
-                        ? 'bg-[#1f1a1c] hover:bg-[#25202a]'
-                        : 'bg-[#16161a] hover:bg-[#1c1c22]'
+                        ? 'bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]'
+                        : 'bg-[var(--bg)] hover:bg-[var(--surface-2)]'
                   }`}
                 >
                   <div className="flex items-center justify-between">
                     <span
                       className={`text-[12.5px] ${
                         isToday
-                          ? 'bg-[#4f8cff] text-white rounded-full w-[17px] h-[17px] inline-flex items-center justify-center'
+                          ? 'bg-[var(--accent)] text-white rounded-full w-[17px] h-[17px] inline-flex items-center justify-center'
                           : inMonth
-                            ? 'text-[#d0d0da]'
-                            : 'text-[#4a4a58]'
+                            ? 'text-[var(--fg)]'
+                            : 'text-[var(--faint)]'
                       }`}
                     >
                       {d.getDate()}
                     </span>
                     {info?.is_holiday && inMonth && (
-                      <span className="text-[9px] px-1 rounded bg-[#3a2224] text-[#ff9aa2]">休</span>
+                      <span className="text-[9px] px-1 rounded bg-[color-mix(in_oklch,var(--danger)_18%,transparent)] text-[var(--danger)]">休</span>
                     )}
                   </div>
-                  <div className={`text-[10px] mt-0.5 ${inMonth ? 'text-[#6b6b7a]' : 'text-[#3a3a46]'}`}>
+                  <div className={`text-[10px] mt-0.5 ${inMonth ? 'text-[var(--faint)]' : 'text-[var(--faint)]'}`}>
                     {info?.lunar}
                   </div>
                   {info?.festivals?.[0] && (
-                    <div className="text-[10px] text-[#f0a860] truncate leading-tight">
+                    <div className="text-[10px] text-[var(--warn)] truncate leading-tight">
                       {info.festivals[0]}
                     </div>
                   )}
@@ -398,7 +442,7 @@ function CalendarPage(): React.JSX.Element {
                       )
                     })}
                     {dayTasks.length > 0 && (
-                      <div className="text-[9.5px] px-1 rounded truncate leading-[13px] bg-[#2a1f2a] text-[#e0a0c0]">
+                      <div className="text-[9.5px] px-1 rounded truncate leading-[13px] bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] text-[var(--violet)]">
                         {dayTasks.length} 项作业截止
                       </div>
                     )}
@@ -420,7 +464,7 @@ function CalendarPage(): React.JSX.Element {
             onSelect={setSelected}
           />
         ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[#26262f] bg-[#16161a] divide-y divide-[#22222a]">
+          <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg)] divide-y divide-[var(--border-soft)]">
             {Array.from({ length: 42 }, (_, i) => addDays(cells[0], i))
               .filter((d) => {
                 const k = ymd(d)
@@ -433,10 +477,10 @@ function CalendarPage(): React.JSX.Element {
                 return (
                   <div key={k} className="px-3 py-2">
                     <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-[12px] text-[#d0d0da]">
+                      <span className="text-[12px] text-[var(--fg)]">
                         {d.getMonth() + 1}/{d.getDate()} 周{WEEK_CN[(d.getDay() + 6) % 7]}
                       </span>
-                      <span className="text-[10.5px] text-[#5c5c6a]">
+                      <span className="text-[10.5px] text-[var(--faint)]">
                         {infos[k]?.lunar} {infos[k]?.festivals?.[0] ?? ''}
                       </span>
                     </div>
@@ -445,10 +489,10 @@ function CalendarPage(): React.JSX.Element {
                       return (
                         <div key={p.id} className="flex items-center gap-2 text-[11.5px] py-0.5">
                           <span className="w-1.5 h-1.5 rounded-full" style={{ background: q.color }} />
-                          <span className="text-[#6b6b7a] w-[88px]">
+                          <span className="text-[var(--faint)] w-[88px]">
                             {minToText(p.start_min)}–{minToText(p.end_min)}
                           </span>
-                          <span className={p.done ? 'text-[#6b6b7a] line-through' : 'text-[#d0d0da]'}>
+                          <span className={p.done ? 'text-[var(--faint)] line-through' : 'text-[var(--fg)]'}>
                             {p.title}
                           </span>
                         </div>
@@ -456,9 +500,9 @@ function CalendarPage(): React.JSX.Element {
                     })}
                     {(tasksByDate[k] || []).map((t) => (
                       <div key={t.id} className="flex items-center gap-2 text-[11.5px] py-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[#e879a6]" />
-                        <span className="text-[#6b6b7a] w-[88px]">{t.ddl?.slice(11, 16)}</span>
-                        <span className="text-[#c8a0c8]">{t.title}</span>
+                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--violet)]" />
+                        <span className="text-[var(--faint)] w-[88px]">{t.ddl?.slice(11, 16)}</span>
+                        <span className="text-[var(--violet)]">{t.title}</span>
                       </div>
                     ))}
                   </div>
@@ -484,8 +528,8 @@ function CalendarPage(): React.JSX.Element {
       {/* ============ 右栏 ============ */}
       <aside className="w-[300px] shrink-0 flex flex-col gap-2.5 overflow-y-auto">
         {/* 今天 */}
-        <section className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-3">
-          <div className="text-[12px] text-[#e0e0e8] mb-1">
+        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+          <div className="text-[12px] text-[var(--fg)] mb-1">
             今天 · {today.getMonth() + 1} 月 {today.getDate()} 日
           </div>
           {(() => {
@@ -493,7 +537,7 @@ function CalendarPage(): React.JSX.Element {
             const list = plansByDate[tk] || []
             const tkTasks = tasksByDate[tk] || []
             if (list.length === 0 && tkTasks.length === 0) {
-              return <div className="text-[11.5px] text-[#5c5c6a]">这一天没有安排。</div>
+              return <div className="text-[11.5px] text-[var(--faint)]">这一天没有安排。</div>
             }
             return (
               <div className="space-y-1">
@@ -502,8 +546,8 @@ function CalendarPage(): React.JSX.Element {
                   return (
                     <div key={p.id} className="flex items-center gap-1.5 text-[11.5px]">
                       <span className="w-1.5 h-1.5 rounded-full" style={{ background: q.color }} />
-                      <span className="text-[#c8c8d4] truncate">{p.title}</span>
-                      <span className="text-[10px] text-[#6b6b7a] ml-auto">
+                      <span className="text-[var(--muted)] truncate">{p.title}</span>
+                      <span className="text-[10px] text-[var(--faint)] ml-auto">
                         {minToText(p.start_min)}
                       </span>
                     </div>
@@ -511,8 +555,8 @@ function CalendarPage(): React.JSX.Element {
                 })}
                 {tkTasks.map((t) => (
                   <div key={t.id} className="flex items-center gap-1.5 text-[11.5px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#e879a6]" />
-                    <span className="text-[#c8a0c8] truncate">{t.title}</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--violet)]" />
+                    <span className="text-[var(--violet)] truncate">{t.title}</span>
                     <span className="text-[10px] text-[#a06a80] ml-auto">
                       {t.ddl?.slice(11, 16)}
                     </span>
@@ -524,8 +568,8 @@ function CalendarPage(): React.JSX.Element {
         </section>
 
         {/* 接下来 7 天 */}
-        <section className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-3">
-          <div className="text-[12px] text-[#e0e0e8] mb-2">接下来 7 天</div>
+        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+          <div className="text-[12px] text-[var(--fg)] mb-2">接下来 7 天</div>
           <div className="space-y-2">
             {next7.map(({ date: d, key, info, plans: dayPlans, tasks: dayTasks }) => {
               const empty = dayPlans.length === 0 && dayTasks.length === 0
@@ -533,14 +577,14 @@ function CalendarPage(): React.JSX.Element {
               return (
                 <div key={key}>
                   <div className="flex items-center gap-1.5 mb-1">
-                    <span className={`text-[11px] ${isToday ? 'text-[#7db4ff]' : 'text-[#8a8a98]'}`}>
+                    <span className={`text-[11px] ${isToday ? 'text-[var(--accent-strong)]' : 'text-[var(--faint)]'}`}>
                       {isToday ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`}
                     </span>
-                    <span className="text-[10px] text-[#5c5c6a]">
+                    <span className="text-[10px] text-[var(--faint)]">
                       周{WEEK_CN[(d.getDay() + 6) % 7]}
                     </span>
                     {info?.festivals?.[0] && (
-                      <span className="text-[9.5px] px-1 rounded bg-[#3a2f1f] text-[#f0c070]">
+                      <span className="text-[9.5px] px-1 rounded bg-[color-mix(in_oklch,var(--warn)_16%,transparent)] text-[var(--warn)]">
                         {info.festivals[0]}
                       </span>
                     )}
@@ -549,7 +593,7 @@ function CalendarPage(): React.JSX.Element {
                         setSelected(key)
                         setFormOpen(true)
                       }}
-                      className="ml-auto text-[#4a4a58] hover:text-[#4f8cff]"
+                      className="ml-auto text-[var(--faint)] hover:text-[var(--accent-strong)]"
                       title="在这一天新建"
                     >
                       <Plus size={12} />
@@ -571,7 +615,7 @@ function CalendarPage(): React.JSX.Element {
                             <button
                               onClick={() => void toggleDone(p)}
                               className={`mt-[2px] w-3.5 h-3.5 shrink-0 rounded-full border flex items-center justify-center ${
-                                p.done ? 'bg-[#4f8cff] border-[#4f8cff]' : 'border-[#5f6b7a]'
+                                p.done ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-[var(--faint)]'
                               }`}
                             >
                               {p.done ? <Check size={9} className="text-white" strokeWidth={3} /> : null}
@@ -579,30 +623,30 @@ function CalendarPage(): React.JSX.Element {
                             <div className="min-w-0 flex-1">
                               <div
                                 className={`text-[11.5px] leading-tight truncate ${
-                                  p.done ? 'line-through text-[#6b6b7a]' : 'text-[#dcdce6]'
+                                  p.done ? 'line-through text-[var(--faint)]' : 'text-[var(--fg)]'
                                 }`}
                               >
                                 {p.title}
                               </div>
-                              <div className="text-[10px] text-[#7a7a88] mt-0.5">
+                              <div className="text-[10px] text-[var(--faint)] mt-0.5">
                                 {minToText(p.start_min)}–{minToText(p.end_min)}
                               </div>
                             </div>
                             {p.done ? (
-                              <span className="text-[9px] px-1 rounded bg-[#1f3a2c] text-[#7ee2b8] shrink-0">
+                              <span className="text-[9px] px-1 rounded bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] shrink-0">
                                 已完成
                               </span>
                             ) : (
                               <span
                                 className="text-[9px] px-1 rounded shrink-0"
-                                style={{ background: `${q.color}22`, color: q.text }}
+                                style={{ background: `color-mix(in oklch, ${q.color} 14%, transparent)`, color: q.text }}
                               >
                                 {q.short}
                               </span>
                             )}
                             <button
                               onClick={() => void deletePlan(p.id).then(reloadPlans)}
-                              className="opacity-0 group-hover:opacity-100 text-[#6b6b7a] hover:text-[#ff8080] shrink-0"
+                              className="opacity-0 group-hover:opacity-100 text-[var(--faint)] hover:text-[var(--danger)] shrink-0"
                             >
                               <Trash2 size={10} />
                             </button>
@@ -612,11 +656,11 @@ function CalendarPage(): React.JSX.Element {
                       {dayTasks.map((t) => (
                         <div
                           key={t.id}
-                          className="rounded-md px-2 py-1.5 flex items-start gap-1.5 bg-[#2a1f2a] border-l-2 border-[#e879a6]"
+                          className="rounded-md px-2 py-1.5 flex items-start gap-1.5 bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] border-l-2 border-[var(--violet)]"
                         >
                           <div className="min-w-0 flex-1">
-                            <div className="text-[11.5px] text-[#e0b0d0] truncate">{t.title}</div>
-                            <div className="text-[10px] text-[#a0748c] mt-0.5">
+                            <div className="text-[11.5px] text-[var(--violet)] truncate">{t.title}</div>
+                            <div className="text-[10px] text-[var(--violet)] mt-0.5">
                               截止 {t.ddl?.slice(11, 16)} · {t.course_abbr || t.platform}
                             </div>
                           </div>
@@ -631,28 +675,28 @@ function CalendarPage(): React.JSX.Element {
         </section>
 
         {/* 法定节假日 */}
-        <section className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-3">
-          <div className="flex items-center gap-1.5 text-[12px] text-[#e0e0e8] mb-1.5">
-            <Settings2 size={12} className="text-[#5c5c6a]" /> 法定节假日
+        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+          <div className="flex items-center gap-1.5 text-[12px] text-[var(--fg)] mb-1.5">
+            <Settings2 size={12} className="text-[var(--faint)]" /> 法定节假日
           </div>
           {nextHoliday ? (
-            <div className="text-[11px] text-[#9a9aa8] leading-relaxed">
-              下一个假期：<span className="text-[#f0c070]">{nextHoliday.name}</span>（
+            <div className="text-[11px] text-[var(--faint)] leading-relaxed">
+              下一个假期：<span className="text-[var(--warn)]">{nextHoliday.name}</span>（
               {nextHoliday.date.getMonth() + 1} 月 {nextHoliday.date.getDate()} 日），还有{' '}
               {Math.round((nextHoliday.date.getTime() - today.getTime()) / 86400000)} 天。
-              <div className="mt-1.5 text-[10.5px] text-[#5c5c6a]">
+              <div className="mt-1.5 text-[10.5px] text-[var(--faint)]">
                 农历与节气为算法推算；放假区间按规则近似，遇国务院调休通知可能偏差。
               </div>
             </div>
           ) : (
-            <div className="text-[11px] text-[#5c5c6a]">未来 120 天内暂无识别到的法定节假日。</div>
+            <div className="text-[11px] text-[var(--faint)]">未来 120 天内暂无识别到的法定节假日。</div>
           )}
         </section>
 
         {/* 图例 */}
-        <section className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-3">
-          <div className="text-[12px] text-[#e0e0e8] mb-2">图例</div>
-          <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10.5px] text-[#9a9aa8]">
+        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
+          <div className="text-[12px] text-[var(--fg)] mb-2">图例</div>
+          <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10.5px] text-[var(--faint)]">
             {Object.values(QUADRANTS).map((q) => (
               <div key={q.key} className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-sm" style={{ background: q.color }} />
@@ -660,7 +704,7 @@ function CalendarPage(): React.JSX.Element {
               </div>
             ))}
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[#e879a6]" /> 作业截止
+              <span className="w-2 h-2 rounded-sm bg-[var(--violet)]" /> 作业截止
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-sm bg-[#3f6fa8]" /> 课程
@@ -669,17 +713,17 @@ function CalendarPage(): React.JSX.Element {
               <span className="w-2 h-2 rounded-sm bg-[#ff9aa2]" /> 法定休假
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[#3a3a46]" /> 调休补班
+              <span className="w-2 h-2 rounded-sm bg-[var(--border)]" /> 调休补班
             </div>
           </div>
-          <div className="mt-2 text-[10px] text-[#4a4a58] leading-relaxed">
+          <div className="mt-2 text-[10px] text-[var(--faint)] leading-relaxed">
             单击日期格选中，双击空白处或点「新建日程」添加；事项颜色按艾森豪威尔矩阵区分。
           </div>
         </section>
       </aside>
 
       {toast && (
-        <div className="fixed bottom-12 right-6 px-3 py-2 rounded-md bg-[#16302a] text-[#7ee2b8] text-[12px] shadow-lg max-w-[460px] break-all">
+        <div className="fixed bottom-12 right-6 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] text-[12px] shadow-lg max-w-[460px] break-all">
           {toast}
         </div>
       )}
@@ -704,31 +748,31 @@ function PlanForm({
   const [quadrant, setQuadrant] = useState('q2')
 
   return (
-    <div className="rounded-lg border border-[#33405a] bg-[#1a2030] p-2.5 flex flex-wrap items-center gap-2">
+    <div className="rounded-lg border border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] p-2.5 flex flex-wrap items-center gap-2">
       <input
         autoFocus
         value={title}
         onChange={(e) => setTitle(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && onSubmit({ date, start, mins, title, quadrant })}
         placeholder="日程内容"
-        className="flex-1 min-w-[160px] bg-transparent text-[12.5px] outline-none placeholder:text-[#4a4a58]"
+        className="flex-1 min-w-[160px] bg-transparent text-[12.5px] outline-none placeholder:text-[var(--faint)]"
       />
       <input
         type="date"
         value={date}
         onChange={(e) => setDate(e.target.value)}
-        className="bg-transparent text-[11.5px] px-1 py-0.5 rounded border border-[#2e2e38] outline-none [color-scheme:dark]"
+        className="bg-transparent text-[11.5px] px-1 py-0.5 rounded border border-[var(--border)] outline-none [color-scheme:dark]"
       />
       <input
         type="time"
         value={start}
         onChange={(e) => setStart(e.target.value)}
-        className="bg-transparent text-[11.5px] px-1 py-0.5 rounded border border-[#2e2e38] outline-none [color-scheme:dark]"
+        className="bg-transparent text-[11.5px] px-1 py-0.5 rounded border border-[var(--border)] outline-none [color-scheme:dark]"
       />
       <select
         value={mins}
         onChange={(e) => setMins(Number(e.target.value))}
-        className="bg-[#1a2030] text-[11.5px] px-1 py-1 rounded border border-[#2e2e38] outline-none"
+        className="bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] text-[11.5px] px-1 py-1 rounded border border-[var(--border)] outline-none"
       >
         {[15, 30, 45, 60, 90, 120, 180].map((n) => (
           <option key={n} value={n}>
@@ -744,7 +788,7 @@ function PlanForm({
             onClick={() => setQuadrant(q.key)}
             title={q.name}
             className={`px-1.5 py-1 rounded text-[10.5px] border transition-all ${
-              quadrant === q.key ? 'border-transparent' : 'border-[#2e2e38] opacity-70'
+              quadrant === q.key ? 'border-transparent' : 'border-[var(--border)] opacity-70'
             }`}
             style={{
               background: quadrant === q.key ? q.bg : 'transparent',
@@ -758,13 +802,13 @@ function PlanForm({
 
       <button
         onClick={() => onSubmit({ date, start, mins, title, quadrant })}
-        className="px-2.5 py-1 rounded bg-[#4f8cff] text-white text-[11.5px]"
+        className="px-2.5 py-1 rounded bg-[var(--accent)] text-white text-[11.5px]"
       >
         添加
       </button>
       <button
         onClick={onCancel}
-        className="px-2 py-1 rounded text-[11.5px] text-[#8a8a98] hover:text-[#e0e0e8]"
+        className="px-2 py-1 rounded text-[11.5px] text-[var(--faint)] hover:text-[var(--fg)]"
       >
         取消
       </button>
@@ -809,11 +853,34 @@ function WeekView({
   }, [courses])
 
   const blocksByDay = useMemo(() => {
-    const out: Record<string, { top: number; height: number; left: string; width: string; label: string; sub: string; color: string; done?: boolean; online?: boolean }[]> = {}
+    const out: Record<
+      string,
+      {
+        top: number
+        height: number
+        left: string
+        width: string
+        label: string
+        sub: string
+        color: string
+        done?: boolean
+        online?: boolean
+        z: number
+      }[]
+    > = {}
 
     for (const d of days) {
       const key = ymd(d)
-      const raw: { start: number; end: number; label: string; sub: string; color: string; done?: boolean; online?: boolean }[] = []
+      const raw: {
+        start: number
+        end: number
+        label: string
+        sub: string
+        color: string
+        done?: boolean
+        online?: boolean
+        kind: 'plan' | 'course'
+      }[] = []
 
       for (const p of plansByDate[key] || []) {
         const q = qOf(p.quadrant)
@@ -823,7 +890,8 @@ function WeekView({
           label: p.title,
           sub: `${minToText(p.start_min)}–${minToText(p.end_min)}`,
           color: q.color,
-          done: !!p.done
+          done: !!p.done,
+          kind: 'plan' as const
         })
       }
       const weekNo = firstWeekDate ? weekOfDate(d, firstWeekDate) : null
@@ -837,14 +905,18 @@ function WeekView({
           end: en,
           label: c.course_abbr || c.course_name || '课程',
           sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
-          color: '#3f6fa8',
-          online: (c.location || '').includes('线上')
+          color: 'var(--accent)',
+          online: (c.location || '').includes('线上'),
+          kind: 'course' as const
         })
       }
 
-      raw.sort((a, b) => a.start - b.start)
+      // 课程之间才分道；日程用半透明覆盖层，避免把本来就窄的列再切碎
+      const coursesOnly = raw.filter((x) => x.kind === 'course').sort((a, b) => a.start - b.start)
+      const plansOnly = raw.filter((x) => x.kind === 'plan').sort((a, b) => a.start - b.start)
+
       const laneEnds: number[] = []
-      const placed = raw.map((it) => {
+      const placedCourses = coursesOnly.map((it) => {
         let lane = laneEnds.findIndex((end) => end <= it.start)
         if (lane === -1) {
           lane = laneEnds.length
@@ -855,17 +927,36 @@ function WeekView({
         return { ...it, lane }
       })
       const total = Math.max(1, laneEnds.length)
-      out[key] = placed.map((it) => ({
+
+      const geom = (it: { start: number; end: number }): { top: number; height: number } => ({
         top: (it.start / 60) * HOUR_H,
-        height: Math.max(14, ((it.end - it.start) / 60) * HOUR_H - 1),
-        left: `calc(${(it.lane * 100) / total}% + 1px)`,
-        width: `calc(${100 / total}% - 2px)`,
-        label: it.label,
-        sub: it.sub,
-        color: it.color,
-        done: it.done,
-        online: it.online
-      }))
+        height: Math.max(14, ((it.end - it.start) / 60) * HOUR_H - 1)
+      })
+
+      out[key] = [
+        ...placedCourses.map((it) => ({
+          ...geom(it),
+          left: `calc(${(it.lane * 100) / total}% + 1px)`,
+          width: `calc(${100 / total}% - 2px)`,
+          label: it.label,
+          sub: it.sub,
+          color: it.color,
+          done: it.done,
+          online: it.online,
+          z: 1
+        })),
+        ...plansOnly.map((it) => ({
+          ...geom(it),
+          left: 'calc(2px)',
+          width: 'calc(100% - 4px)',
+          label: it.label,
+          sub: it.sub,
+          color: it.color,
+          done: it.done,
+          online: it.online,
+          z: 3
+        }))
+      ]
     }
     return out
   }, [days, plansByDate, coursesByDay, firstWeekDate])
@@ -873,9 +964,9 @@ function WeekView({
   const nowTop = ((today.getHours() * 60 + today.getMinutes()) / 60) * HOUR_H
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-[#26262f] bg-[#16161a] overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg)] overflow-hidden">
       {/* 表头 */}
-      <div className="flex shrink-0 border-b border-[#26262f] bg-[#131317]">
+      <div className="flex shrink-0 border-b border-[var(--border)] bg-[var(--bg-deep)]">
         <div className="w-10 shrink-0" />
         {days.map((d) => {
           const key = ymd(d)
@@ -887,17 +978,17 @@ function WeekView({
             <button
               key={key}
               onClick={() => onSelect(key)}
-              className={`flex-1 min-w-0 px-1 py-1 text-center border-l border-[#22222a] transition-colors ${
-                isSel ? 'bg-[#1e2432]' : holiday ? 'bg-[#1f1a1c] hover:bg-[#25202a]' : 'hover:bg-[#1c1c22]'
+              className={`flex-1 min-w-0 px-1 py-1 text-center border-l border-[var(--border-soft)] transition-colors ${
+                isSel ? 'bg-[var(--accent-soft)]' : holiday ? 'bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]' : 'hover:bg-[var(--surface-2)]'
               }`}
             >
-              <div className={`text-[10.5px] ${isToday ? 'text-[#7db4ff]' : 'text-[#9a9aa8]'}`}>
+              <div className={`text-[10.5px] ${isToday ? 'text-[var(--accent-strong)]' : 'text-[var(--faint)]'}`}>
                 周{WEEK_CN[(d.getDay() + 6) % 7]}
               </div>
-              <div className={`text-[13px] ${isToday ? 'text-white' : 'text-[#d0d0da]'}`}>
+              <div className={`text-[13px] ${isToday ? 'text-white' : 'text-[var(--fg)]'}`}>
                 {d.getDate()}
               </div>
-              <div className="text-[9px] text-[#5c5c6a] truncate">
+              <div className="text-[9px] text-[var(--faint)] truncate">
                 {info?.festivals?.[0] || info?.lunar}
               </div>
             </button>
@@ -912,7 +1003,7 @@ function WeekView({
             {Array.from({ length: 24 }, (_, h) => (
               <div
                 key={h}
-                className="absolute left-0 right-0 text-right pr-1 text-[9px] text-[#4a4a58]"
+                className="absolute left-0 right-0 text-right pr-1 text-[9px] text-[var(--faint)]"
                 style={{ top: h * HOUR_H + 1 }}
               >
                 {pad(h)}
@@ -925,21 +1016,21 @@ function WeekView({
             const isToday = key === ymd(today)
             const dayTasks = tasksByDate[key] || []
             return (
-              <div key={key} className="relative flex-1 min-w-0 border-l border-[#22222a]">
+              <div key={key} className="relative flex-1 min-w-0 border-l border-[var(--border-soft)]">
                 {Array.from({ length: 24 }, (_, h) => (
                   <div
                     key={h}
-                    className="absolute left-0 right-0 border-t border-[#1e1e26]"
+                    className="absolute left-0 right-0 border-t border-[var(--border-soft)]"
                     style={{ top: h * HOUR_H }}
                   />
                 ))}
 
                 {isToday && (
                   <div
-                    className="absolute left-0 right-0 border-t border-[#ef4444] z-20"
+                    className="absolute left-0 right-0 border-t border-[var(--danger)] z-20"
                     style={{ top: nowTop }}
                   >
-                    <span className="absolute -left-0.5 -top-[3px] w-1.5 h-1.5 rounded-full bg-[#ef4444]" />
+                    <span className="absolute -left-0.5 -top-[3px] w-1.5 h-1.5 rounded-full bg-[var(--danger)]" />
                   </div>
                 )}
 
@@ -949,7 +1040,7 @@ function WeekView({
                   return (
                     <div
                       key={`task-${t.id}`}
-                      className="absolute left-0.5 right-0.5 z-10 text-[9px] px-1 rounded bg-[#2a1f2a] text-[#e0b0d0] truncate border-l-2 border-[#e879a6]"
+                      className="absolute left-0.5 right-0.5 z-10 text-[9px] px-1 rounded bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] text-[var(--violet)] truncate border-l-2 border-[var(--violet)]"
                       style={{ top: (m / 60) * HOUR_H + i * 12 }}
                       title={`${t.title} 截止 ${t.ddl.slice(11, 16)}`}
                     >
@@ -967,9 +1058,10 @@ function WeekView({
                       height: b.height,
                       left: b.left,
                       width: b.width,
-                      background: `${b.color}${b.online ? '1a' : '30'}`,
+                      zIndex: b.z,
+                      background: `color-mix(in oklch, ${b.color} ${b.online ? 10 : b.z > 1 ? 26 : 18}%, transparent)`,
                       borderLeft: `2px ${b.online ? 'dashed' : 'solid'} ${b.color}`,
-                      color: b.done ? '#7a7a88' : '#dcdce6',
+                      color: b.done ? 'var(--faint)' : 'var(--fg)',
                       textDecoration: b.done ? 'line-through' : 'none'
                     }}
                     title={`${b.label} ${b.sub}`}
@@ -1047,7 +1139,7 @@ function DayView({
         height: Math.max(16, ((e - s) / 60) * HOUR_H - 1),
         label: c.course_abbr || c.course_name || '课程',
         sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
-        color: '#3f6fa8',
+        color: 'var(--accent)',
         online: (c.location || '').includes('线上')
       })
     }
@@ -1056,27 +1148,27 @@ function DayView({
 
   return (
     <div className="flex-1 min-h-0 flex gap-2.5">
-      <div className="flex-1 min-w-0 flex flex-col rounded-lg border border-[#26262f] bg-[#16161a] overflow-hidden">
-        <div className="h-9 shrink-0 flex items-center gap-2 px-2.5 border-b border-[#26262f]">
-          <span className="text-[11.5px] text-[#9a9aa8] shrink-0">{date.slice(5)} 日计划</span>
+      <div className="flex-1 min-w-0 flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg)] overflow-hidden">
+        <div className="h-9 shrink-0 flex items-center gap-2 px-2.5 border-b border-[var(--border)]">
+          <span className="text-[11.5px] text-[var(--faint)] shrink-0">{date.slice(5)} 日计划</span>
           <div className="ml-auto flex items-center gap-1.5">
             <input
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && onAdd(title, time, minutes, quadrant)}
               placeholder="事项"
-              className="w-24 bg-transparent text-[11px] px-1.5 py-0.5 rounded border border-[#2e2e38] outline-none focus:border-[#4f8cff] placeholder:text-[#4a4a58]"
+              className="w-24 bg-transparent text-[11px] px-1.5 py-0.5 rounded border border-[var(--border)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
             />
             <input
               type="time"
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className="bg-transparent text-[11px] px-1 py-0.5 rounded border border-[#2e2e38] outline-none [color-scheme:dark]"
+              className="bg-transparent text-[11px] px-1 py-0.5 rounded border border-[var(--border)] outline-none [color-scheme:dark]"
             />
             <select
               value={minutes}
               onChange={(e) => setMinutes(Number(e.target.value))}
-              className="bg-[#16161a] text-[11px] px-1 py-0.5 rounded border border-[#2e2e38] outline-none"
+              className="bg-[var(--bg)] text-[11px] px-1 py-0.5 rounded border border-[var(--border)] outline-none"
             >
               {[15, 30, 45, 60, 90, 120].map((n) => (
                 <option key={n} value={n}>
@@ -1102,7 +1194,7 @@ function DayView({
                 onAdd(title || '新事项', time, minutes, quadrant)
                 setTitle('')
               }}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[#4f8cff] text-white text-[10.5px]"
+              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[var(--accent)] text-white text-[10.5px]"
             >
               <Plus size={10} /> 添加
             </button>
@@ -1114,10 +1206,10 @@ function DayView({
             {Array.from({ length: 24 }, (_, h) => (
               <div
                 key={h}
-                className="absolute left-0 right-0 border-t border-[#22222a]"
+                className="absolute left-0 right-0 border-t border-[var(--border-soft)]"
                 style={{ top: h * HOUR_H }}
               >
-                <span className="absolute -top-2 left-1.5 text-[9.5px] text-[#4a4a58]">
+                <span className="absolute -top-2 left-1.5 text-[9.5px] text-[var(--faint)]">
                   {pad(h)}:00
                 </span>
               </div>
@@ -1130,9 +1222,9 @@ function DayView({
                   style={{
                     top: b.top,
                     height: b.height,
-                    background: `${b.color}${b.online ? '18' : '2e'}`,
+                    background: `color-mix(in oklch, ${b.color} ${b.online ? 10 : 19}%, transparent)`,
                     borderLeft: `2px ${b.online ? 'dashed' : 'solid'} ${b.color}`,
-                    color: b.done ? '#7a7a88' : '#dcdce6',
+                    color: b.done ? 'var(--faint)' : 'var(--fg)',
                     textDecoration: b.done ? 'line-through' : 'none'
                   }}
                   title={`${b.label} ${b.sub}`}
@@ -1146,13 +1238,13 @@ function DayView({
                             const p = plans.find((x) => x.id === b.id)
                             if (p) onToggle(p)
                           }}
-                          className="text-[#a0a0b0] hover:text-[#7ee2b8]"
+                          className="text-[var(--faint)] hover:text-[var(--ok)]"
                         >
                           <Check size={9} />
                         </button>
                         <button
                           onClick={() => onDelete(b.id as number)}
-                          className="text-[#8a8a98] hover:text-[#ff8080]"
+                          className="text-[var(--faint)] hover:text-[var(--danger)]"
                         >
                           <Trash2 size={9} />
                         </button>
@@ -1167,31 +1259,31 @@ function DayView({
         </div>
       </div>
 
-      <aside className="w-[176px] shrink-0 rounded-lg border border-[#26262f] bg-[#1a1a20] p-2 overflow-y-auto">
-        <div className="text-[11px] text-[#9a9aa8] mb-1.5">当日课表</div>
+      <aside className="w-[176px] shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 overflow-y-auto">
+        <div className="text-[11px] text-[var(--faint)] mb-1.5">当日课表</div>
         {courses.length === 0 ? (
-          <div className="text-[10.5px] text-[#4a4a58] leading-relaxed">
+          <div className="text-[10.5px] text-[var(--faint)] leading-relaxed">
             今天没有课
-            <div className="text-[10px] text-[#3d3d48] mt-1">课表需学习通刷新后导入</div>
+            <div className="text-[10px] text-[var(--faint)] mt-1">课表需学习通刷新后导入</div>
           </div>
         ) : (
           <div className="space-y-1.5">
             {courses.map((c) => (
-              <div key={c.id} className="rounded border border-[#2a2a34] bg-[#16161a] p-1.5">
-                <div className="text-[11px] text-[#dcdce6] truncate">
+              <div key={c.id} className="rounded border border-[var(--border)] bg-[var(--bg)] p-1.5">
+                <div className="text-[11px] text-[var(--fg)] truncate">
                   {c.course_abbr || c.course_name}
                 </div>
-                <div className="text-[10px] text-[#7a7a88] mt-0.5">
+                <div className="text-[10px] text-[var(--faint)] mt-0.5">
                   {c.start_time}–{c.end_time}
                 </div>
                 {c.location && (
-                  <div className="flex items-start gap-0.5 text-[10px] text-[#6b6b7a] mt-0.5">
+                  <div className="flex items-start gap-0.5 text-[10px] text-[var(--faint)] mt-0.5">
                     <MapPin size={8} className="mt-[1px] shrink-0" />
                     <span className="truncate">{c.location}</span>
                   </div>
                 )}
                 {c.weeks && c.weeks.length <= 6 && (
-                  <div className="text-[9.5px] text-[#4f6a8a] mt-0.5">第 {c.weeks} 周</div>
+                  <div className="text-[9.5px] text-[var(--faint)] mt-0.5">第 {c.weeks} 周</div>
                 )}
               </div>
             ))}
@@ -1199,10 +1291,10 @@ function DayView({
         )}
 
         {tasks.length > 0 && (
-          <div className="mt-2 pt-1.5 border-t border-[#26262f]">
-            <div className="text-[10.5px] text-[#9a9aa8] mb-1">当日截止</div>
+          <div className="mt-2 pt-1.5 border-t border-[var(--border)]">
+            <div className="text-[10.5px] text-[var(--faint)] mb-1">当日截止</div>
             {tasks.map((t) => (
-              <div key={t.id} className="text-[10.5px] text-[#c8a0c8] truncate">
+              <div key={t.id} className="text-[10.5px] text-[var(--violet)] truncate">
                 {t.ddl?.slice(11, 16)} {t.title}
               </div>
             ))}

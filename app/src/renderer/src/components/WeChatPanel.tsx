@@ -102,7 +102,7 @@ export default function WeChatPanel(): React.JSX.Element {
   return (
     <div className="space-y-3">
       {/* 环境检测 */}
-      <div className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-2.5 space-y-1.5">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5 space-y-1.5">
         <EnvRow
           ok={!!env?.installed}
           label="wechat-cli"
@@ -128,17 +128,17 @@ export default function WeChatPanel(): React.JSX.Element {
       </div>
 
       {/* 安装位置 + 一键安装 */}
-      <div className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-2.5 space-y-1.5">
+      <div className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2.5 space-y-1.5">
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="text-[#5c5c6a] w-20 shrink-0">运行文件</span>
-          <span className="text-[#9a9aa8] truncate" title={env?.path || ''}>
+          <span className="text-[var(--faint)] w-20 shrink-0">运行文件</span>
+          <span className="text-[var(--faint)] truncate" title={env?.path || ''}>
             {env?.path || '未安装'}
           </span>
           <span
             className={`ml-auto shrink-0 px-1 py-0.5 rounded text-[10px] ${
               env?.path?.startsWith('C:')
-                ? 'bg-[#2a2218] text-[#e0b080]'
-                : 'bg-[#16302a] text-[#7ee2b8]'
+                ? 'bg-[color-mix(in_oklch,var(--warn)_14%,transparent)] text-[var(--warn)]'
+                : 'bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)]'
             }`}
           >
             {env?.path?.startsWith('C:') ? 'C 盘' : 'D 盘'}
@@ -146,8 +146,8 @@ export default function WeChatPanel(): React.JSX.Element {
         </div>
         {st?.install.manifest?.size != null && (
           <div className="flex items-center gap-2 text-[11px]">
-            <span className="text-[#5c5c6a] w-20 shrink-0">组件大小</span>
-            <span className="text-[#9a9aa8]">
+            <span className="text-[var(--faint)] w-20 shrink-0">组件大小</span>
+            <span className="text-[var(--faint)]">
               {(st.install.manifest.size / 1024 / 1024).toFixed(1)} MB
               {st.install.manifest.installed_at ? ` · 安装于 ${st.install.manifest.installed_at.slice(0, 16).replace('T', ' ')}` : ''}
             </span>
@@ -155,7 +155,7 @@ export default function WeChatPanel(): React.JSX.Element {
         )}
 
         {env?.installed ? (
-          <div className="text-[10.5px] text-[#4a4a58] pt-1">
+          <div className="text-[10.5px] text-[var(--faint)] pt-1">
             由应用自带 Python 环境安装（pip），随应用一起管理
           </div>
         ) : (
@@ -164,7 +164,7 @@ export default function WeChatPanel(): React.JSX.Element {
               value={sourceUrl}
               onChange={(e) => setSourceUrl(e.target.value)}
               placeholder="下载地址或本地 zip/exe 路径"
-              className="flex-1 px-2.5 py-1.5 rounded-md bg-[#16161a] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
+              className="flex-1 px-2.5 py-1.5 rounded-md bg-[var(--bg)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
             />
             <button
               onClick={async () => {
@@ -180,7 +180,7 @@ export default function WeChatPanel(): React.JSX.Element {
                 }
               }}
               disabled={busy || !sourceUrl.trim()}
-              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#4f8cff] text-white text-[11.5px] disabled:opacity-40"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[var(--accent)] text-white text-[11.5px] disabled:opacity-40"
             >
               {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />}
               一键安装
@@ -192,14 +192,14 @@ export default function WeChatPanel(): React.JSX.Element {
       {/* 群配置：勾选 */}
       <div>
         <div className="flex items-center justify-between mb-1">
-          <span className="text-[11px] text-[#5c5c6a]">
+          <span className="text-[11px] text-[var(--faint)]">
             监听的群（已选 {selected.length} 个，不选则监听全部）
           </span>
           <div className="flex items-center gap-2">
             <button
               onClick={() => void loadGroups()}
               disabled={loadingGroups || !env?.initialized}
-              className="text-[10.5px] text-[#6b6b7a] hover:text-[#4f8cff] disabled:opacity-40"
+              className="text-[10.5px] text-[var(--faint)] hover:text-[var(--accent-strong)] disabled:opacity-40"
             >
               {loadingGroups ? '读取中…' : '读取群列表'}
             </button>
@@ -215,7 +215,7 @@ export default function WeChatPanel(): React.JSX.Element {
                 }
               }}
               disabled={busy}
-              className="text-[10.5px] text-[#7db4ff] hover:text-[#a9c9ff] disabled:opacity-40"
+              className="text-[10.5px] text-[var(--accent-strong)] hover:text-[var(--accent-strong)] disabled:opacity-40"
             >
               保存选择
             </button>
@@ -223,7 +223,7 @@ export default function WeChatPanel(): React.JSX.Element {
         </div>
 
         {allGroups.length === 0 ? (
-          <div className="text-[11px] text-[#4a4a58] py-1.5">
+          <div className="text-[11px] text-[var(--faint)] py-1.5">
             还没读取群列表。点右上「读取群列表」，会从微信会话里列出所有群。
           </div>
         ) : (
@@ -232,9 +232,9 @@ export default function WeChatPanel(): React.JSX.Element {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="搜索群名"
-              className="w-full mb-1.5 px-2.5 py-1 rounded-md bg-[#16161a] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
+              className="w-full mb-1.5 px-2.5 py-1 rounded-md bg-[var(--bg)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
             />
-            <div className="max-h-44 overflow-y-auto rounded-md border border-[#26262f] divide-y divide-[#22222a]">
+            <div className="max-h-44 overflow-y-auto rounded-md border border-[var(--border)] divide-y divide-[var(--border-soft)]">
               {allGroups
                 .filter((g) => !search || g.name.includes(search))
                 .map((g) => {
@@ -247,27 +247,27 @@ export default function WeChatPanel(): React.JSX.Element {
                           prev.includes(g.name) ? prev.filter((x) => x !== g.name) : [...prev, g.name]
                         )
                       }
-                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[#1c1c22] ${
-                        checked ? 'bg-[#1a2130]' : ''
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[var(--surface-2)] ${
+                        checked ? 'bg-[var(--accent-soft)]' : ''
                       }`}
                     >
                       <span
                         className={`w-3.5 h-3.5 shrink-0 rounded border flex items-center justify-center ${
-                          checked ? 'bg-[#4f8cff] border-[#4f8cff]' : 'border-[#5f6b7a]'
+                          checked ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-[var(--faint)]'
                         }`}
                       >
                         {checked && <Check size={9} className="text-white" strokeWidth={3} />}
                       </span>
                       <span className="min-w-0 flex-1">
-                        <span className="block text-[11.5px] text-[#c8c8d4] truncate">{g.name}</span>
+                        <span className="block text-[11.5px] text-[var(--muted)] truncate">{g.name}</span>
                         {g.last_message && (
-                          <span className="block text-[10px] text-[#4a4a58] truncate">
+                          <span className="block text-[10px] text-[var(--faint)] truncate">
                             {g.last_message}
                           </span>
                         )}
                       </span>
                       {g.unread > 0 && (
-                        <span className="text-[9.5px] px-1 rounded bg-[#2a1f2a] text-[#e0a0c0] shrink-0">
+                        <span className="text-[9.5px] px-1 rounded bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] text-[var(--violet)] shrink-0">
                           {g.unread > 99 ? '99+' : g.unread}
                         </span>
                       )}
@@ -296,7 +296,7 @@ export default function WeChatPanel(): React.JSX.Element {
               }
             }}
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#242430] text-[11.5px] text-[#d0d0da] disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-3)] text-[11.5px] text-[var(--fg)] disabled:opacity-40"
           >
             唤起微信
           </button>
@@ -305,7 +305,7 @@ export default function WeChatPanel(): React.JSX.Element {
           <button
             onClick={() => void stop()}
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#2a1a1c] text-[#ff9aa2] text-[12px] disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-[var(--danger)] text-[12px] disabled:opacity-50"
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Square size={13} />}
             停止监听
@@ -314,7 +314,7 @@ export default function WeChatPanel(): React.JSX.Element {
           <button
             onClick={() => void start()}
             disabled={busy || !canRun}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
             title={canRun ? '' : '需要 wechat-cli 且微信已启动'}
           >
             {busy ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} />}
@@ -335,28 +335,28 @@ export default function WeChatPanel(): React.JSX.Element {
             }
           }}
           disabled={busy || !env?.wechat_running}
-          className="px-2.5 py-1.5 rounded-md bg-[#242430] text-[11.5px] text-[#d0d0da] disabled:opacity-40"
+          className="px-2.5 py-1.5 rounded-md bg-[var(--surface-3)] text-[11.5px] text-[var(--fg)] disabled:opacity-40"
           title="从微信进程内存提取数据库密钥，只需执行一次"
         >
           初始化
         </button>
         <button
           onClick={() => void reload()}
-          className="px-2.5 py-1.5 rounded-md border border-[#2e2e38] text-[11.5px] text-[#8a8a98] hover:text-[#e0e0e8]"
+          className="px-2.5 py-1.5 rounded-md border border-[var(--border)] text-[11.5px] text-[var(--faint)] hover:text-[var(--fg)]"
         >
           重新检测
         </button>
       </div>
 
       {listener?.last_error && (
-        <div className="flex items-start gap-1.5 text-[11.5px] text-[#ff9aa2]">
+        <div className="flex items-start gap-1.5 text-[11.5px] text-[var(--danger)]">
           <AlertCircle size={12} className="mt-0.5 shrink-0" />
           <span className="break-all">{listener.last_error}</span>
         </div>
       )}
-      {msg && <div className="text-[11.5px] text-[#7ee2b8] break-all">{msg}</div>}
+      {msg && <div className="text-[11.5px] text-[var(--ok)] break-all">{msg}</div>}
       {initOutput && (
-        <pre className="max-h-28 overflow-y-auto rounded-md bg-[#141418] border border-[#26262f] p-2 text-[10.5px] text-[#8a8a98] whitespace-pre-wrap break-all">
+        <pre className="max-h-28 overflow-y-auto rounded-md bg-[var(--bg-deep)] border border-[var(--border)] p-2 text-[10.5px] text-[var(--faint)] whitespace-pre-wrap break-all">
           {initOutput}
         </pre>
       )}
@@ -364,21 +364,21 @@ export default function WeChatPanel(): React.JSX.Element {
       {/* 最近消息 */}
       {!!listener?.recent?.length && (
         <div>
-          <div className="flex items-center gap-1.5 text-[11px] text-[#5c5c6a] mb-1">
+          <div className="flex items-center gap-1.5 text-[11px] text-[var(--faint)] mb-1">
             <MessageSquare size={11} /> 最近捕获
           </div>
-          <div className="max-h-40 overflow-y-auto rounded-md border border-[#26262f] divide-y divide-[#22222a]">
+          <div className="max-h-40 overflow-y-auto rounded-md border border-[var(--border)] divide-y divide-[var(--border-soft)]">
             {[...listener.recent].reverse().map((m, i) => (
               <div key={i} className="px-2.5 py-1.5">
-                <div className="flex items-center gap-1.5 text-[10.5px] text-[#5c5c6a]">
-                  <span className="text-[#8a8a98]">{m.group || '未知群'}</span>
+                <div className="flex items-center gap-1.5 text-[10.5px] text-[var(--faint)]">
+                  <span className="text-[var(--faint)]">{m.group || '未知群'}</span>
                   <span>·</span>
                   <span>{m.sender}</span>
                   {m.keyword_hit && (
-                    <span className="ml-auto text-[#7ee2b8]">命中关键词</span>
+                    <span className="ml-auto text-[var(--ok)]">命中关键词</span>
                   )}
                 </div>
-                <div className="text-[11.5px] text-[#c0c0cc] truncate">{m.text}</div>
+                <div className="text-[11.5px] text-[var(--muted)] truncate">{m.text}</div>
               </div>
             ))}
           </div>
@@ -386,8 +386,8 @@ export default function WeChatPanel(): React.JSX.Element {
       )}
 
       {/* 链路自测 */}
-      <div className="pt-2 border-t border-[#26262f]">
-        <div className="text-[11px] text-[#5c5c6a] mb-1">
+      <div className="pt-2 border-t border-[var(--border)]">
+        <div className="text-[11px] text-[var(--faint)] mb-1">
           链路自测（不需要 wechat-cli，验证「过滤 → 提取 → 入库」）
         </div>
         <div className="flex gap-2">
@@ -395,7 +395,7 @@ export default function WeChatPanel(): React.JSX.Element {
             value={testText}
             onChange={(e) => setTestText(e.target.value)}
             placeholder="模拟一条群消息，如：【数据结构】实验四请于下周三23:59前提交"
-            className="flex-1 px-2.5 py-1.5 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
+            className="flex-1 px-2.5 py-1.5 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
           />
           <button
             onClick={async () => {
@@ -409,12 +409,12 @@ export default function WeChatPanel(): React.JSX.Element {
                   : r.message || '未命中关键词，已忽略'
               )
             }}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#242430] text-[12px] text-[#d0d0da]"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[var(--surface-3)] text-[12px] text-[var(--fg)]"
           >
             <Send size={12} /> 投递
           </button>
         </div>
-        {testResult && <div className="mt-1.5 text-[11px] text-[#7ee2b8]">{testResult}</div>}
+        {testResult && <div className="mt-1.5 text-[11px] text-[var(--ok)]">{testResult}</div>}
       </div>
     </div>
   )
@@ -432,12 +432,12 @@ function EnvRow({
   return (
     <div className="flex items-center gap-2 text-[11.5px]">
       {ok ? (
-        <Check size={12} className="text-[#7ee2b8] shrink-0" />
+        <Check size={12} className="text-[var(--ok)] shrink-0" />
       ) : (
-        <AlertCircle size={12} className="text-[#8a8a98] shrink-0" />
+        <AlertCircle size={12} className="text-[var(--faint)] shrink-0" />
       )}
-      <span className="text-[#8a8a98] w-20 shrink-0">{label}</span>
-      <span className={`truncate ${ok ? 'text-[#c0c0cc]' : 'text-[#6b6b7a]'}`}>{detail}</span>
+      <span className="text-[var(--faint)] w-20 shrink-0">{label}</span>
+      <span className={`truncate ${ok ? 'text-[var(--muted)]' : 'text-[var(--faint)]'}`}>{detail}</span>
     </div>
   )
 }

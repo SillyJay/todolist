@@ -48,7 +48,7 @@ function SettingsPage(): React.JSX.Element {
     setTimeout(() => setSaved(false), 2000)
   }
 
-  if (loading) return <div className="text-[13px] text-[#5c5c6a]">加载中…</div>
+  if (loading) return <div className="text-[13px] text-[var(--faint)]">加载中…</div>
 
   return (
     <div className="max-w-2xl space-y-6">
@@ -58,17 +58,17 @@ function SettingsPage(): React.JSX.Element {
       >
         <div className="flex gap-2">
           <div className="relative flex-1">
-            <KeyRound size={14} className="absolute left-2.5 top-2.5 text-[#5c5c6a]" />
+            <KeyRound size={14} className="absolute left-2.5 top-2.5 text-[var(--faint)]" />
             <input
               type={showKey ? 'text' : 'password'}
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
               placeholder={ai?.configured ? '已配置（••••••••），输入可覆盖' : '粘贴 API Key'}
-              className="w-full pl-8 pr-9 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px] outline-none focus:border-[#4f8cff]"
+              className="w-full pl-8 pr-9 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)]"
             />
             <button
               onClick={() => setShowKey((v) => !v)}
-              className="absolute right-2 top-2 text-[#5c5c6a] hover:text-[#a0a0b0]"
+              className="absolute right-2 top-2 text-[var(--faint)] hover:text-[var(--faint)]"
             >
               {showKey ? <EyeOff size={14} /> : <Eye size={14} />}
             </button>
@@ -83,7 +83,7 @@ function SettingsPage(): React.JSX.Element {
               setAiMsg('已保存到系统凭据管理器')
             }}
             disabled={!apiKey}
-            className="flex items-center gap-1 px-3 py-2 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
+            className="flex items-center gap-1 px-3 py-2 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
           >
             <Save size={13} /> 保存
           </button>
@@ -93,15 +93,15 @@ function SettingsPage(): React.JSX.Element {
               const r = await testAi()
               setAiMsg(r.message)
             }}
-            className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+            className="px-3 py-2 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)]"
           >
             测试连接
           </button>
         </div>
-        <div className="mt-2 text-[11.5px] text-[#5c5c6a]">
+        <div className="mt-2 text-[11.5px] text-[var(--faint)]">
           状态：{ai?.configured ? `已配置 · ${ai.model}` : '未配置'} · Key 存于 Windows 凭据管理器，不落明文
         </div>
-        {aiMsg && <div className="mt-1 text-[11.5px] text-[#7ee2b8]">{aiMsg}</div>}
+        {aiMsg && <div className="mt-1 text-[11.5px] text-[var(--ok)]">{aiMsg}</div>}
       </Section>
 
       <Section
@@ -109,15 +109,15 @@ function SettingsPage(): React.JSX.Element {
         desc="下载的附件按「平台 / 课程 / 任务」自动分类，重名不覆盖、只增不删。默认跟随助手目录，不占 C 盘。"
       >
         <div className="flex gap-2">
-          <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[12px] min-w-0">
-            <FolderOpen size={14} className="text-[#5c5c6a] shrink-0" />
-            <span className="text-[#9a9aa8] truncate" title={ws?.root || ''}>
+          <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[12px] min-w-0">
+            <FolderOpen size={14} className="text-[var(--faint)] shrink-0" />
+            <span className="text-[var(--faint)] truncate" title={ws?.root || ''}>
               {ws?.root || '加载中…'}
             </span>
           </div>
           <button
             onClick={() => void openWorkspace()}
-            className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+            className="px-3 py-2 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)]"
           >
             打开
           </button>
@@ -129,7 +129,7 @@ function SettingsPage(): React.JSX.Element {
               )
               if (dir !== null) void save({ workspace_dir: dir })
             }}
-            className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+            className="px-3 py-2 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)]"
           >
             修改
           </button>
@@ -139,7 +139,7 @@ function SettingsPage(): React.JSX.Element {
             localStorage.removeItem('ca_guide_done')
             location.reload()
           }}
-          className="mt-2 text-[11px] text-[#6b6b7a] hover:text-[#4f8cff]"
+          className="mt-2 text-[11px] text-[var(--faint)] hover:text-[var(--accent-strong)]"
         >
           重新观看新手引导
         </button>
@@ -153,8 +153,8 @@ function SettingsPage(): React.JSX.Element {
               onClick={() => void save({ poll_interval_min: m })}
               className={`px-3 py-1.5 rounded-md text-[12px] border transition-colors ${
                 (values.poll_interval_min || '30') === m
-                  ? 'bg-[#1e2432] border-[#3a4a68] text-[#7db4ff]'
-                  : 'bg-[#1a1a20] border-[#2e2e38] text-[#8a8a98] hover:border-[#3a3a46]'
+                  ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-strong)]'
+                  : 'bg-[var(--surface)] border-[var(--border)] text-[var(--faint)] hover:border-[var(--border)]'
               }`}
             >
               {m} 分钟
@@ -173,7 +173,7 @@ function SettingsPage(): React.JSX.Element {
       <ChaoxingSection />
 
       {saved && (
-        <div className="fixed bottom-12 right-6 flex items-center gap-1.5 px-3 py-2 rounded-md bg-[#16302a] text-[#7ee2b8] text-[12px] shadow-lg">
+        <div className="fixed bottom-12 right-6 flex items-center gap-1.5 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] text-[12px] shadow-lg">
           <Check size={13} /> 已保存
         </div>
       )}
@@ -192,8 +192,8 @@ function Section({
 }): React.JSX.Element {
   return (
     <section>
-      <h2 className="text-[13.5px] font-medium text-[#e0e0e8]">{title}</h2>
-      <p className="text-[11.5px] text-[#6b6b7a] mt-1 mb-3 leading-relaxed">{desc}</p>
+      <h2 className="text-[13.5px] font-medium text-[var(--fg)]">{title}</h2>
+      <p className="text-[11.5px] text-[var(--faint)] mt-1 mb-3 leading-relaxed">{desc}</p>
       {children}
     </section>
   )
@@ -280,9 +280,9 @@ function ChaoxingSection(): React.JSX.Element {
     <Section title="学习通" desc="账号登录后自动同步课程作业；遇到验证码可用 Cookie 导入兜底。">
       <div className="flex items-center gap-2 mb-3 text-[12px]">
         <span
-          className={`w-1.5 h-1.5 rounded-full ${loggedIn ? 'bg-[#22c55e]' : 'bg-[#5c5c6a]'}`}
+          className={`w-1.5 h-1.5 rounded-full ${loggedIn ? 'bg-[var(--ok)]' : 'bg-[var(--faint)]'}`}
         />
-        <span className="text-[#8a8a98]">{loggedIn ? '已登录' : '未登录'}</span>
+        <span className="text-[var(--faint)]">{loggedIn ? '已登录' : '未登录'}</span>
       </div>
 
       {!loggedIn && (
@@ -291,7 +291,7 @@ function ChaoxingSection(): React.JSX.Element {
             value={username}
             onChange={(e) => setUsername(e.target.value)}
             placeholder="手机号 / 学号"
-            className="w-full px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px] outline-none focus:border-[#4f8cff]"
+            className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)]"
           />
           <div className="flex gap-2">
             <input
@@ -300,12 +300,12 @@ function ChaoxingSection(): React.JSX.Element {
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void doLogin()}
               placeholder="密码"
-              className="flex-1 px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px] outline-none focus:border-[#4f8cff]"
+              className="flex-1 px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)]"
             />
             <button
               onClick={() => void doLogin()}
               disabled={busy || !username || !password}
-              className="flex items-center gap-1 px-3 py-2 rounded-md bg-[#4f8cff] text-white text-[12px] disabled:opacity-40"
+              className="flex items-center gap-1 px-3 py-2 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
             >
               <LogIn size={13} /> 登录
             </button>
@@ -317,20 +317,20 @@ function ChaoxingSection(): React.JSX.Element {
         <button
           onClick={() => void doCookie()}
           disabled={busy}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff] disabled:opacity-40"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-40"
         >
           <Cookie size={13} /> 导入 Cookie
         </button>
         <button
           onClick={() => void doRefresh()}
           disabled={busy}
-          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff] disabled:opacity-40"
+          className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-40"
         >
           <RefreshCw size={13} className={busy ? 'animate-spin' : ''} /> 立即刷新作业
         </button>
       </div>
 
-      {msg && <div className="mt-2 text-[11.5px] text-[#8a8a98] break-all">{msg}</div>}
+      {msg && <div className="mt-2 text-[11.5px] text-[var(--faint)] break-all">{msg}</div>}
     </Section>
   )
 }

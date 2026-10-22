@@ -44,16 +44,16 @@ function human(bytes: number): string {
 
 function fileIcon(ext: string): React.JSX.Element {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext))
-    return <FileImage size={13} className="shrink-0 text-[#7db4ff]" />
+    return <FileImage size={13} className="shrink-0 text-[var(--accent-strong)]" />
   if (['xlsx', 'xls', 'xlsm', 'csv'].includes(ext))
-    return <FileSpreadsheet size={13} className="shrink-0 text-[#7ee2b8]" />
+    return <FileSpreadsheet size={13} className="shrink-0 text-[var(--ok)]" />
   if (['mp4', 'webm', 'mov', 'avi'].includes(ext))
-    return <FileVideo size={13} className="shrink-0 text-[#c09ae0]" />
+    return <FileVideo size={13} className="shrink-0 text-[var(--violet)]" />
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext))
-    return <FileArchive size={13} className="shrink-0 text-[#e0b080]" />
+    return <FileArchive size={13} className="shrink-0 text-[var(--warn)]" />
   if (['doc', 'docx', 'pdf', 'ppt', 'pptx', 'txt', 'md'].includes(ext))
-    return <FileText size={13} className="shrink-0 text-[#9aa8c0]" />
-  return <FileIcon size={13} className="shrink-0 text-[#6b6b7a]" />
+    return <FileText size={13} className="shrink-0 text-[var(--faint)]" />
+  return <FileIcon size={13} className="shrink-0 text-[var(--faint)]" />
 }
 
 function FilesPage(): React.JSX.Element {
@@ -170,20 +170,20 @@ function FilesPage(): React.JSX.Element {
   const renderFileRow = (f: FileRow, showPath: boolean): React.JSX.Element => (
     <div
       key={f.rel}
-      className="group flex items-center gap-2 pl-1 pr-2 py-1 rounded-md hover:bg-[#1c1c22] cursor-pointer"
+      className="group flex items-center gap-2 pl-1 pr-2 py-1 rounded-md hover:bg-[var(--surface-2)] cursor-pointer"
       onClick={() => setPreview(f)}
       title={f.rel}
     >
       <span className="w-4" />
       {fileIcon(f.ext)}
-      <span className="min-w-0 flex-1 text-[12px] text-[#c0c0cc] truncate">{f.name}</span>
+      <span className="min-w-0 flex-1 text-[12px] text-[var(--muted)] truncate">{f.name}</span>
       {showPath && (
-        <span className="shrink-0 max-w-[36%] text-[10px] text-[#4a4a58] truncate">
+        <span className="shrink-0 max-w-[36%] text-[10px] text-[var(--faint)] truncate">
           {f.platform} / {f.course} / {f.task}
         </span>
       )}
-      <span className="shrink-0 w-16 text-right text-[10px] text-[#4a4a58]">{human(f.size)}</span>
-      <span className="hidden md:block shrink-0 w-24 text-right text-[10px] text-[#3d3d48]">
+      <span className="shrink-0 w-16 text-right text-[10px] text-[var(--faint)]">{human(f.size)}</span>
+      <span className="hidden md:block shrink-0 w-24 text-right text-[10px] text-[var(--faint)]">
         {f.mtime.slice(5)}
       </span>
       <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -192,7 +192,7 @@ function FilesPage(): React.JSX.Element {
             e.stopPropagation()
             setPreview(f)
           }}
-          className="p-1 rounded text-[#6b6b7a] hover:bg-[#24242c] hover:text-[#7db4ff]"
+          className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--accent-strong)]"
           title="预览"
         >
           <Eye size={11} />
@@ -202,7 +202,7 @@ function FilesPage(): React.JSX.Element {
             e.stopPropagation()
             void openPath(f.rel)
           }}
-          className="p-1 rounded text-[#6b6b7a] hover:bg-[#24242c] hover:text-[#7ee2b8]"
+          className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--ok)]"
           title="用系统程序打开"
         >
           <ExternalLink size={11} />
@@ -212,7 +212,7 @@ function FilesPage(): React.JSX.Element {
             e.stopPropagation()
             void revealPath(f.rel)
           }}
-          className="p-1 rounded text-[#6b6b7a] hover:bg-[#24242c] hover:text-[#c0c0cc]"
+          className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--muted)]"
           title="在文件夹中显示"
         >
           <FolderOpen size={11} />
@@ -222,7 +222,7 @@ function FilesPage(): React.JSX.Element {
             e.stopPropagation()
             void doDeleteFile(f)
           }}
-          className="p-1 rounded text-[#6b6b7a] hover:bg-[#2a1f24] hover:text-[#e08a9a]"
+          className="p-1 rounded text-[var(--faint)] hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-[var(--danger)]"
           title="移到回收站"
         >
           <Trash2 size={11} />
@@ -233,29 +233,29 @@ function FilesPage(): React.JSX.Element {
 
   const chevron = (key: string): React.JSX.Element =>
     expanded.has(key) ? (
-      <ChevronDown size={13} className="shrink-0 text-[#5c5c6a]" />
+      <ChevronDown size={13} className="shrink-0 text-[var(--faint)]" />
     ) : (
-      <ChevronRight size={13} className="shrink-0 text-[#5c5c6a]" />
+      <ChevronRight size={13} className="shrink-0 text-[var(--faint)]" />
     )
 
   return (
     <div className="h-full flex flex-col">
       <div className="shrink-0 flex flex-wrap items-center gap-2 pb-3">
-        <div className="flex items-center gap-1.5 text-[12px] text-[#9a9aa8]">
-          <HardDrive size={14} className="text-[#4f8cff]" />
+        <div className="flex items-center gap-1.5 text-[12px] text-[var(--faint)]">
+          <HardDrive size={14} className="text-[var(--accent-strong)]" />
           工作区
         </div>
-        <span className="text-[11px] text-[#5c5c6a]">
+        <span className="text-[11px] text-[var(--faint)]">
           {total.count} 个文件 · {human(total.size)}
         </span>
 
         <div className="relative ml-2">
-          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[#4a4a58]" />
+          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--faint)]" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜索文件 / 课程 / 任务"
-            className="w-56 pl-7 pr-2 py-1.5 rounded-md bg-[#16161a] border border-[#2e2e38] text-[11.5px] text-[#d0d0da] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
+            className="w-56 pl-7 pr-2 py-1.5 rounded-md bg-[var(--bg)] border border-[var(--border)] text-[11.5px] text-[var(--fg)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
           />
         </div>
 
@@ -263,14 +263,14 @@ function FilesPage(): React.JSX.Element {
           <button
             onClick={() => void reload()}
             disabled={loading || busy}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-[#2e2e38] text-[11.5px] text-[#8a8a98] hover:text-[#e0e0e8] hover:border-[#3e3e4a] disabled:opacity-40"
+            className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-[var(--border)] text-[11.5px] text-[var(--faint)] hover:text-[var(--fg)] hover:border-[var(--border)] disabled:opacity-40"
             title="刷新"
           >
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 刷新
           </button>
           <button
             onClick={() => void openWorkspace()}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[11.5px] text-[#b0b0be] hover:border-[#4f8cff]"
+            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
           >
             <FolderOpen size={12} /> 打开文件夹
           </button>
@@ -278,40 +278,40 @@ function FilesPage(): React.JSX.Element {
       </div>
 
       {err && (
-        <div className="shrink-0 mb-2 flex items-start gap-1.5 px-3 py-2 rounded-md bg-[#2a1f24] border border-[#3d2a30] text-[11.5px] text-[#e0a0b0]">
+        <div className="shrink-0 mb-2 flex items-start gap-1.5 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] border border-[#3d2a30] text-[11.5px] text-[var(--danger)]">
           <AlertCircle size={12} className="mt-0.5 shrink-0" />
           <span>{err}</span>
         </div>
       )}
 
       {info && (
-        <div className="shrink-0 mb-2 text-[10.5px] text-[#4a4a58] truncate" title={info.root}>
+        <div className="shrink-0 mb-2 text-[10.5px] text-[var(--faint)] truncate" title={info.root}>
           {info.root}
         </div>
       )}
 
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[#24242c] bg-[#131317] p-1.5">
+      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[var(--border-soft)] bg-[var(--bg-deep)] p-1.5">
         {loading ? (
-          <div className="h-full flex flex-col items-center justify-center gap-2 text-[#5c5c6a]">
+          <div className="h-full flex flex-col items-center justify-center gap-2 text-[var(--faint)]">
             <Loader2 size={16} className="animate-spin" />
             <span className="text-[12px]">读取工作区…</span>
           </div>
         ) : q.trim() ? (
           results.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-[12px] text-[#4a4a58]">
+            <div className="h-full flex items-center justify-center text-[12px] text-[var(--faint)]">
               没有匹配「{q}」的文件
             </div>
           ) : (
             <div>
-              <div className="px-2 py-1 text-[10.5px] text-[#4a4a58]">{results.length} 个结果</div>
+              <div className="px-2 py-1 text-[10.5px] text-[var(--faint)]">{results.length} 个结果</div>
               {results.map((f) => renderFileRow(f, true))}
             </div>
           )
         ) : !info || flat.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-2 px-8 text-center">
-            <Folder size={20} className="text-[#3a3a46]" />
-            <div className="text-[12.5px] text-[#8a8a98]">工作区还是空的</div>
-            <div className="max-w-sm text-[11px] leading-relaxed text-[#5c5c6a]">
+            <Folder size={20} className="text-[var(--faint)]" />
+            <div className="text-[12.5px] text-[var(--faint)]">工作区还是空的</div>
+            <div className="max-w-sm text-[11px] leading-relaxed text-[var(--faint)]">
               去任务页选中一个学习通或小雅的任务，点附件区的「全部下载」，
               文件会按「平台 / 课程 / 任务」自动归档到这里。
             </div>
@@ -324,12 +324,12 @@ function FilesPage(): React.JSX.Element {
               <div key={pKey} className="mb-0.5">
                 <button
                   onClick={() => toggle(pKey)}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-[#1c1c22]"
+                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)]"
                 >
                   {chevron(pKey)}
-                  <Folder size={13} className="shrink-0 text-[#7db4ff]" />
-                  <span className="text-[12.5px] text-[#dcdce6]">{p.platform}</span>
-                  <span className="text-[10.5px] text-[#4a4a58]">
+                  <Folder size={13} className="shrink-0 text-[var(--accent-strong)]" />
+                  <span className="text-[12.5px] text-[var(--fg)]">{p.platform}</span>
+                  <span className="text-[10.5px] text-[var(--faint)]">
                     {p.count} 个文件 · {human(p.size)}
                   </span>
                 </button>
@@ -342,14 +342,14 @@ function FilesPage(): React.JSX.Element {
                       <div key={cKey} className="ml-4">
                         <button
                           onClick={() => toggle(cKey)}
-                          className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-[#1c1c22]"
+                          className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-[var(--surface-2)]"
                         >
                           {chevron(cKey)}
-                          <Folder size={12} className="shrink-0 text-[#6b8fb8]" />
-                          <span className="min-w-0 flex-1 truncate text-left text-[12px] text-[#c0c0cc]">
+                          <Folder size={12} className="shrink-0 text-[var(--faint)]" />
+                          <span className="min-w-0 flex-1 truncate text-left text-[12px] text-[var(--muted)]">
                             {c.name}
                           </span>
-                          <span className="shrink-0 text-[10px] text-[#4a4a58]">
+                          <span className="shrink-0 text-[10px] text-[var(--faint)]">
                             {c.count} 个 · {human(c.size)}
                           </span>
                         </button>
@@ -364,17 +364,17 @@ function FilesPage(): React.JSX.Element {
                               : `${p.platform}/${c.name}/${t.name}`
                             return (
                               <div key={tKey} className="ml-4">
-                                <div className="group flex items-center rounded-md hover:bg-[#1c1c22]">
+                                <div className="group flex items-center rounded-md hover:bg-[var(--surface-2)]">
                                   <button
                                     onClick={() => toggle(tKey)}
                                     className="min-w-0 flex-1 flex items-center gap-1.5 px-2 py-1"
                                   >
                                     {chevron(tKey)}
-                                    <Folder size={12} className="shrink-0 text-[#5c5c6a]" />
-                                    <span className="truncate text-[11.5px] text-[#9a9aa8]">
+                                    <Folder size={12} className="shrink-0 text-[var(--faint)]" />
+                                    <span className="truncate text-[11.5px] text-[var(--faint)]">
                                       {t.name}
                                     </span>
-                                    <span className="shrink-0 text-[10px] text-[#3d3d48]">
+                                    <span className="shrink-0 text-[10px] text-[var(--faint)]">
                                       {t.count}
                                     </span>
                                   </button>
@@ -389,7 +389,7 @@ function FilesPage(): React.JSX.Element {
                                           taskRel
                                         })
                                       }
-                                      className="mr-1 rounded p-1 text-[#6b6b7a] opacity-0 hover:text-[#e08a9a] group-hover:opacity-100"
+                                      className="mr-1 rounded p-1 text-[var(--faint)] opacity-0 hover:text-[var(--danger)] group-hover:opacity-100"
                                       title="删除整个任务目录"
                                     >
                                       <Trash2 size={11} />
@@ -422,7 +422,7 @@ function FilesPage(): React.JSX.Element {
         )}
       </div>
 
-      <div className="shrink-0 pt-2 text-[10.5px] text-[#3d3d48]">
+      <div className="shrink-0 pt-2 text-[10.5px] text-[var(--faint)]">
         程序不会自动删除文件；本页的删除会先进回收站，可恢复。
       </div>
 

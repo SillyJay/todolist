@@ -135,34 +135,34 @@ function FilePreview({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-5xl h-[85vh] flex flex-col rounded-xl bg-[#15151a] border border-[#2a2a34] shadow-2xl overflow-hidden"
+        className="w-full max-w-5xl h-[85vh] flex flex-col rounded-xl bg-[var(--bg)] border border-[var(--border)] shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
         {/* 工具栏 */}
-        <div className="h-11 shrink-0 flex items-center gap-2 px-3 border-b border-[#26262f]">
-          <FileText size={14} className="text-[#5c5c6a] shrink-0" />
-          <span className="text-[12.5px] text-[#d0d0da] truncate" title={file.rel}>
+        <div className="h-11 shrink-0 flex items-center gap-2 px-3 border-b border-[var(--border)]">
+          <FileText size={14} className="text-[var(--faint)] shrink-0" />
+          <span className="text-[12.5px] text-[var(--fg)] truncate" title={file.rel}>
             {file.name}
           </span>
-          <span className="shrink-0 text-[10.5px] text-[#4a4a58]">{human(file.size)}</span>
+          <span className="shrink-0 text-[10.5px] text-[var(--faint)]">{human(file.size)}</span>
           <div className="ml-auto flex items-center gap-1">
             <button
               onClick={() => void openPath(file.rel)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#9a9aa8] hover:bg-[#1f1f27] hover:text-[#e0e0e8]"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[var(--faint)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
               title="用系统程序打开"
             >
               <Download size={12} /> 打开
             </button>
             <button
               onClick={() => void revealPath(file.rel)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[#9a9aa8] hover:bg-[#1f1f27] hover:text-[#e0e0e8]"
+              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[var(--faint)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
               title="在文件夹中显示"
             >
               <FolderOpen size={12} /> 定位
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded text-[#6b6b7a] hover:bg-[#1f1f27] hover:text-[#e0e0e8]"
+              className="p-1.5 rounded text-[var(--faint)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
               title="关闭（Esc）"
             >
               <X size={14} />
@@ -171,9 +171,9 @@ function FilePreview({
         </div>
 
         {/* 内容区 */}
-        <div className="flex-1 min-h-0 overflow-auto bg-[#0f0f13]">
+        <div className="flex-1 min-h-0 overflow-auto bg-[var(--bg-deep)]">
           {loading && (
-            <div className="h-full flex flex-col items-center justify-center gap-2 text-[#6b6b7a]">
+            <div className="h-full flex flex-col items-center justify-center gap-2 text-[var(--faint)]">
               <Loader2 size={18} className="animate-spin" />
               <span className="text-[12px]">正在解析…</span>
             </div>
@@ -181,12 +181,12 @@ function FilePreview({
 
           {!loading && error && (
             <div className="h-full flex flex-col items-center justify-center gap-2 px-8 text-center">
-              <AlertCircle size={20} className="text-[#e0a080]" />
-              <div className="text-[12.5px] text-[#c8c8d4]">无法预览</div>
-              <div className="text-[11px] text-[#6b6b7a] max-w-md leading-relaxed">{error}</div>
+              <AlertCircle size={20} className="text-[var(--warn)]" />
+              <div className="text-[12.5px] text-[var(--muted)]">无法预览</div>
+              <div className="text-[11px] text-[var(--faint)] max-w-md leading-relaxed">{error}</div>
               <button
                 onClick={() => void openPath(file.rel)}
-                className="mt-2 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[11.5px] text-[#b0b0be] hover:border-[#4f8cff]"
+                className="mt-2 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
               >
                 用系统程序打开
               </button>
@@ -210,7 +210,7 @@ function FilePreview({
           )}
 
           {!loading && !error && kind === 'text' && (
-            <pre className="p-4 text-[12px] leading-relaxed text-[#c0c0cc] whitespace-pre-wrap break-words font-mono">
+            <pre className="p-4 text-[12px] leading-relaxed text-[var(--muted)] whitespace-pre-wrap break-words font-mono">
               {text}
             </pre>
           )}
@@ -238,15 +238,15 @@ function FilePreview({
           {!loading && !error && kind === 'sheet' && (
             <div className="min-h-full">
               {sheets.length > 1 && (
-                <div className="sticky top-0 z-10 flex items-center gap-1 px-3 py-2 bg-[#15151a] border-b border-[#26262f]">
+                <div className="sticky top-0 z-10 flex items-center gap-1 px-3 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
                   {sheets.map((s, i) => (
                     <button
                       key={s.name}
                       onClick={() => setActiveSheet(i)}
                       className={`px-2 py-1 rounded text-[11px] ${
                         i === activeSheet
-                          ? 'bg-[#242430] text-[#e0e0e8]'
-                          : 'text-[#6b6b7a] hover:text-[#c0c0cc]'
+                          ? 'bg-[var(--surface-3)] text-[var(--fg)]'
+                          : 'text-[var(--faint)] hover:text-[var(--muted)]'
                       }`}
                     >
                       {s.name}
@@ -257,12 +257,12 @@ function FilePreview({
               <table className="w-full border-collapse text-[11.5px]">
                 <tbody>
                   {(sheets[activeSheet]?.rows ?? []).map((row, ri) => (
-                    <tr key={ri} className={ri === 0 ? 'bg-[#1c1c24]' : 'hover:bg-[#17171d]'}>
+                    <tr key={ri} className={ri === 0 ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}>
                       {row.map((cell, ci) => (
                         <td
                           key={ci}
-                          className={`px-2 py-1 border border-[#24242c] text-[#b8b8c4] whitespace-nowrap ${
-                            ri === 0 ? 'font-medium text-[#dcdce6]' : ''
+                          className={`px-2 py-1 border border-[var(--border-soft)] text-[var(--muted)] whitespace-nowrap ${
+                            ri === 0 ? 'font-medium text-[var(--fg)]' : ''
                           }`}
                         >
                           {cell}
@@ -273,20 +273,20 @@ function FilePreview({
                 </tbody>
               </table>
               {maxRows >= 500 && (
-                <div className="px-3 py-2 text-[10.5px] text-[#5c5c6a]">
+                <div className="px-3 py-2 text-[10.5px] text-[var(--faint)]">
                   只显示前 500 行，完整内容请用系统程序打开
                 </div>
               )}
               {maxRows === 0 && (
-                <div className="p-6 text-center text-[12px] text-[#5c5c6a]">这个工作表是空的</div>
+                <div className="p-6 text-center text-[12px] text-[var(--faint)]">这个工作表是空的</div>
               )}
             </div>
           )}
 
           {!loading && !error && kind === 'other' && (
             <div className="h-full flex flex-col items-center justify-center gap-2 px-8 text-center">
-              <FileQuestion size={20} className="text-[#4a4a58]" />
-              <div className="text-[12.5px] text-[#c8c8d4]">
+              <FileQuestion size={20} className="text-[var(--faint)]" />
+              <div className="text-[12.5px] text-[var(--muted)]">
                 {['doc', 'xls', 'ppt'].includes(file.ext)
                   ? `老版 Office 格式（.${file.ext}）无法内嵌预览`
                   : ['zip', 'rar', '7z', 'tar', 'gz'].includes(file.ext)
@@ -295,7 +295,7 @@ function FilePreview({
                       ? `.${file.ext} 暂不支持预览`
                       : '该文件类型暂不支持预览'}
               </div>
-              <div className="max-w-md text-[11px] leading-relaxed text-[#6b6b7a]">
+              <div className="max-w-md text-[11px] leading-relaxed text-[var(--faint)]">
                 {['doc', 'xls', 'ppt'].includes(file.ext)
                   ? '浏览器只能解析 .docx / .xlsx / .pptx。点下面的「打开」用 Word 或 WPS 查看，体验也更好。'
                   : ['zip', 'rar', '7z', 'tar', 'gz'].includes(file.ext)
@@ -304,7 +304,7 @@ function FilePreview({
               </div>
               <button
                 onClick={() => void openPath(file.rel)}
-                className="mt-2 px-3 py-1.5 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[11.5px] text-[#b0b0be] hover:border-[#4f8cff]"
+                className="mt-2 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
               >
                 用系统程序打开
               </button>
