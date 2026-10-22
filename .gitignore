@@ -30,3 +30,10 @@ Thumbs.db
 .idea/
 
 diagnose-report.txt
+
+# 运行时数据（用户下载的作业附件、导出文件）——不进版本库
+workspace/
+exports/
+
+# 本地组件（wechat-cli 等）
+bin/
