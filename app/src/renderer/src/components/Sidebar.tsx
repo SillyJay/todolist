@@ -1,5 +1,5 @@
 import { ListTodo, CalendarDays, MessageSquare, FolderOpen, Settings } from 'lucide-react'
-import { NAV_ITEMS, type PageKey } from '../lib/ui'
+import { NAV_ITEMS, PLATFORMS, type PageKey } from '../lib/ui'
 
 const ICONS = {
   tasks: ListTodo,
@@ -12,9 +12,11 @@ const ICONS = {
 interface Props {
   current: PageKey
   onChange: (p: PageKey) => void
+  platforms: string[]
+  onTogglePlatform: (key: string) => void
 }
 
-function Sidebar({ current, onChange }: Props): React.JSX.Element {
+function Sidebar({ current, onChange, platforms, onTogglePlatform }: Props): React.JSX.Element {
   return (
     <aside className="h-full flex flex-col bg-[#131317] border-r border-[#24242c] py-3">
       <nav className="px-2 space-y-1">
@@ -39,22 +41,30 @@ function Sidebar({ current, onChange }: Props): React.JSX.Element {
         })}
       </nav>
 
-      <div className="mt-5 px-4">
-        <div className="text-[11px] text-[#5c5c6a] mb-2 tracking-wide">平台筛选</div>
-        <div className="space-y-2 text-[12px] text-[#8a8a98]">
-          {['学习通', '小雅', '微信群'].map((p) => (
-            <label key={p} className="flex items-center gap-2 cursor-pointer hover:text-[#c0c0cc]">
-              <input
-                type="checkbox"
-                defaultChecked
-                className="accent-[#4f8cff] w-3.5 h-3.5"
-                readOnly
-              />
-              <span>{p}</span>
-            </label>
-          ))}
+      {current === 'tasks' && (
+        <div className="mt-5 px-4">
+          <div className="text-[11px] text-[#5c5c6a] mb-2 tracking-wide">平台筛选</div>
+          <div className="space-y-2 text-[12px] text-[#8a8a98]">
+            {PLATFORMS.map((p) => {
+              const on = platforms.includes(p.key)
+              return (
+                <label
+                  key={p.key}
+                  className="flex items-center gap-2 cursor-pointer hover:text-[#c0c0cc]"
+                >
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => onTogglePlatform(p.key)}
+                    className="accent-[#4f8cff] w-3.5 h-3.5 cursor-pointer"
+                  />
+                  <span className={on ? '' : 'text-[#4a4a58]'}>{p.label}</span>
+                </label>
+              )
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </aside>
   )
 }

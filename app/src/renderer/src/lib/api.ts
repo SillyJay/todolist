@@ -250,13 +250,57 @@ export const xiaoyaImportCookie = (
   })
 
 // ---- 文件 / 工作区（Phase 3）----
+export interface WorkspaceFile {
+  name: string
+  size: number
+  rel: string
+  ext: string
+  mtime: string
+}
+export interface WorkspaceTask {
+  name: string
+  files: WorkspaceFile[]
+  count: number
+  size: number
+}
+export interface WorkspaceCourse {
+  name: string
+  tasks: WorkspaceTask[]
+  count: number
+  size: number
+}
+export interface WorkspacePlatform {
+  platform: string
+  courses: WorkspaceCourse[]
+  count: number
+  size: number
+}
 export interface WorkspaceInfo {
   root: string
-  tree: { platform: string; courses: { name: string; tasks: { name: string; files: { name: string; size: number }[] }[] }[] }[]
+  tree: WorkspacePlatform[]
 }
+
 export const workspaceInfo = (): Promise<WorkspaceInfo> => request('/files/workspace')
 export const openWorkspace = (): Promise<{ ok: boolean; root: string }> =>
   request('/files/open-workspace', { method: 'POST' })
+
+/** 预览地址（给 img / iframe / fetch 用） */
+export async function previewUrl(rel: string): Promise<string> {
+  const base = await getBaseUrl()
+  return `${base}/files/preview?rel=${encodeURIComponent(rel)}`
+}
+
+export const openPath = (rel: string): Promise<{ ok: boolean; path: string }> =>
+  request('/files/open-path', { method: 'POST', body: JSON.stringify({ rel }) })
+
+export const revealPath = (rel: string): Promise<{ ok: boolean; path: string }> =>
+  request('/files/reveal-path', { method: 'POST', body: JSON.stringify({ rel }) })
+
+export const deleteWorkspaceFile = (rel: string): Promise<{ ok: boolean }> =>
+  request(`/files/file?rel=${encodeURIComponent(rel)}`, { method: 'DELETE' })
+
+export const deleteWorkspaceTaskDir = (rel: string): Promise<{ ok: boolean }> =>
+  request(`/files/task-dir?rel=${encodeURIComponent(rel)}`, { method: 'DELETE' })
 export interface AttachmentItem {
   key: string
   name: string

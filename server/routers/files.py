@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from db.database import get_db
 from db.models import File, Task
-from services.workspace import save_bytes, tree, workspace_root
+from services.workspace import save_bytes, safe_path, tree, workspace_root
 
 router = APIRouter()
 
@@ -29,6 +29,10 @@ class DiscoverBody(BaseModel):
 class BulkDownloadBody(BaseModel):
     task_id: int
     keys: list[str] | None = None  # 不传 = 全部
+
+
+class PathBody(BaseModel):
+    rel: str
 
 
 @router.get("")
@@ -53,6 +57,139 @@ def list_files(task_id: int | None = None, db: Session = Depends(get_db)):
             for f in rows
         ]
     }
+
+
+# ---------- 按相对路径操作（工作区里任何文件，含用户自己放的）----------
+
+_MIME = {
+    "pdf": "application/pdf",
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+    "svg": "image/svg+xml",
+    "bmp": "image/bmp",
+    "txt": "text/plain; charset=utf-8",
+    "md": "text/plain; charset=utf-8",
+    "csv": "text/plain; charset=utf-8",
+    "json": "application/json",
+    "log": "text/plain; charset=utf-8",
+    "mp4": "video/mp4",
+    "webm": "video/webm",
+}
+
+_INLINE = {
+    "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg", "bmp", "mp4", "webm",
+    "txt", "md", "csv", "json", "log",
+}
+
+
+@router.get("/preview")
+def preview_by_rel(rel: str):
+    """按相对路径返回文件内容，供前端内嵌预览。
+
+    PDF / 图片 / 文本由浏览器直接渲染；docx / xlsx 前端用 mammoth / SheetJS 解析，
+    后端只负责给原始字节。
+    """
+    path = safe_path(rel)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "文件不存在")
+    ext = path.rsplit(".", 1)[-1].lower() if "." in path else ""
+    media = _MIME.get(ext, "application/octet-stream")
+    headers = {"X-Content-Type-Options": "nosniff"}
+    if ext not in _INLINE:
+        headers["Content-Disposition"] = "attachment"
+    return FileResponse(path, media_type=media, headers=headers)
+
+
+@router.post("/open-path")
+def open_by_rel(body: PathBody):
+    """用系统默认程序打开工作区文件。"""
+    path = safe_path(body.rel)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "文件不存在")
+    try:
+        os.startfile(path)  # noqa: S606
+    except OSError as e:
+        raise HTTPException(500, f"打开失败：{e}") from e
+    return {"ok": True, "path": path}
+
+
+@router.post("/reveal-path")
+def reveal_by_rel(body: PathBody):
+    """在资源管理器中定位工作区文件。"""
+    path = safe_path(body.rel)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "文件不存在")
+    try:
+        import subprocess
+
+        subprocess.Popen(["explorer", "/select,", os.path.normpath(path)])  # noqa: S603,S607
+    except OSError as e:
+        raise HTTPException(500, f"打开失败：{e}") from e
+    return {"ok": True, "path": path}
+
+
+def _purge_file_rows(target: str, is_dir: bool) -> None:
+    """删除成功后同步清理 files 表记录。"""
+    from db.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        prefix = os.path.normcase(os.path.realpath(target)) + os.sep
+        for row in db.query(File).all():
+            if not row.local_path:
+                continue
+            real = os.path.normcase(os.path.realpath(row.local_path))
+            if (is_dir and real.startswith(prefix)) or (
+                not is_dir and real == os.path.normcase(os.path.realpath(target))
+            ):
+                db.delete(row)
+        db.commit()
+    finally:
+        db.close()
+
+
+@router.delete("/file")
+def delete_by_rel(rel: str):
+    """删除工作区文件（送回收站，可恢复）。
+
+    红线补充：程序自身「只增不删」；这里是用户在文件页的显式操作，
+    因此强制走回收站，失败就报错而不是退化成硬删。
+    """
+    path = safe_path(rel)
+    if not path or not os.path.isfile(path):
+        raise HTTPException(404, "文件不存在")
+
+    from services.trash import to_recycle_bin
+
+    ok, err = to_recycle_bin(path)
+    if not ok:
+        raise HTTPException(500, f"移入回收站失败：{err}")
+    _purge_file_rows(path, is_dir=False)
+    return {"ok": True, "rel": rel}
+
+
+@router.delete("/task-dir")
+def delete_task_dir(rel: str):
+    """删除任务目录（送回收站）。只允许任务层，防止误删平台/课程目录。"""
+    path = safe_path(rel)
+    if not path or not os.path.isdir(path):
+        raise HTTPException(404, "目录不存在")
+
+    root = os.path.realpath(workspace_root())
+    depth = len(os.path.relpath(path, root).split(os.sep))
+    if depth < 3:
+        raise HTTPException(400, "只能删除任务级目录（平台/课程目录不允许删）")
+
+    from services.trash import to_recycle_bin
+
+    ok, err = to_recycle_bin(path)
+    if not ok:
+        raise HTTPException(500, f"移入回收站失败：{err}")
+    _purge_file_rows(path, is_dir=True)
+    return {"ok": True, "rel": rel}
 
 
 @router.get("/workspace")

@@ -14,6 +14,14 @@ export const NAV_ITEMS: NavItem[] = [
   { key: 'settings', label: '设置', icon: 'settings' }
 ]
 
+/** 数据来源平台（侧栏筛选用，值与后端 task.platform 一致） */
+export const PLATFORMS: { key: string; label: string }[] = [
+  { key: 'chaoxing', label: '学习通' },
+  { key: 'xiaoya', label: '小雅' },
+  { key: 'wechat', label: '微信群' },
+  { key: 'manual', label: '手动导入' }
+]
+
 /** DDL 紧急度配色（规格 §8） */
 export function urgencyOf(ddl?: string | null): 'danger' | 'warn' | 'near' | 'normal' {
   if (!ddl) return 'normal'

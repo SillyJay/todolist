@@ -14,8 +14,9 @@
 """
 import hashlib
 import os
-import shutil
 import re
+import shutil
+from datetime import datetime
 
 from config import app_root
 from db.database import SessionLocal
@@ -107,14 +108,37 @@ def save_existing_file(src: str, task, filename: str) -> tuple[str, str]:
     return target, digest.hexdigest()
 
 
+def safe_path(rel: str) -> str | None:
+    """把「相对工作区的路径」解析成绝对路径，越界返回 None。
+
+    前端只能拿到相对路径，所有读写都要过这一层，防止 `../..` 穿越到工作区外。
+    """
+    if not rel:
+        return None
+    root = os.path.realpath(workspace_root())
+    # 统一分隔符，去掉前导分隔符，避免被当成绝对路径
+    cleaned = rel.replace("\\", "/").lstrip("/")
+    target = os.path.realpath(os.path.join(root, cleaned))
+    if target != root and not target.startswith(root + os.sep):
+        return None
+    return target
+
+
 def tree(limit_platforms: int = 20) -> list[dict]:
-    """列出工作区目录树（两层），供设置页展示。"""
+    """列出工作区目录树（三层：平台 / 课程 / 任务 / 文件）。
+
+    每个文件带 `rel`（相对工作区的路径），前端预览、打开、定位都用它，
+    这样工作区里用户自己放的文件（不在 files 表里）也能操作。
+    """
     root = workspace_root()
     out: list[dict] = []
     try:
         platforms = sorted(os.listdir(root))
     except OSError:
         return out
+
+    def rel_of(path: str) -> str:
+        return os.path.relpath(path, root).replace(os.sep, "/")
 
     for platform in platforms[:limit_platforms]:
         pdir = os.path.join(root, platform)
@@ -130,12 +154,48 @@ def tree(limit_platforms: int = 20) -> list[dict]:
                 tdir = os.path.join(cdir, t)
                 if not os.path.isdir(tdir):
                     continue
-                files = [
-                    {"name": f, "size": os.path.getsize(os.path.join(tdir, f))}
-                    for f in os.listdir(tdir)
-                    if os.path.isfile(os.path.join(tdir, f))
-                ]
-                tasks.append({"name": t, "files": files})
-            courses.append({"name": course, "tasks": tasks})
-        out.append({"platform": platform, "courses": courses})
+                files = []
+                for f in sorted(os.listdir(tdir)):
+                    fpath = os.path.join(tdir, f)
+                    if not os.path.isfile(fpath):
+                        continue
+                    try:
+                        stat = os.stat(fpath)
+                    except OSError:
+                        continue
+                    files.append(
+                        {
+                            "name": f,
+                            "size": stat.st_size,
+                            "rel": rel_of(fpath),
+                            "ext": f.rsplit(".", 1)[-1].lower() if "." in f else "",
+                            "mtime": datetime.fromtimestamp(stat.st_mtime).strftime(
+                                "%Y-%m-%d %H:%M"
+                            ),
+                        }
+                    )
+                tasks.append(
+                    {
+                        "name": t,
+                        "files": files,
+                        "count": len(files),
+                        "size": sum(f["size"] for f in files),
+                    }
+                )
+            courses.append(
+                {
+                    "name": course,
+                    "tasks": tasks,
+                    "count": sum(t["count"] for t in tasks),
+                    "size": sum(t["size"] for t in tasks),
+                }
+            )
+        out.append(
+            {
+                "platform": platform,
+                "courses": courses,
+                "count": sum(c["count"] for c in courses),
+                "size": sum(c["size"] for c in courses),
+            }
+        )
     return out

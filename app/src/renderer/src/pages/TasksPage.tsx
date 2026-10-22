@@ -14,11 +14,13 @@ import { formatDdl, urgencyOf, PLATFORM_LABEL } from '../lib/ui'
 interface Props {
   onSelectTask: (t: Task | null) => void
   selectedTaskId?: number
+  /** 侧栏平台筛选；为空数组表示不显示任何任务 */
+  platforms?: string[]
 }
 
 type Filter = 'pending' | 'done' | 'all'
 
-function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
+function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JSX.Element {
   const [tasks, setTasks] = useState<Task[]>([])
   const [filter, setFilter] = useState<Filter>('pending')
   const [loading, setLoading] = useState(true)
@@ -54,10 +56,12 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, semesterOnly])
 
-  const visibleTasks = useMemo(
-    () => (onlyDdl ? tasks.filter((t) => t.ddl) : tasks),
-    [tasks, onlyDdl]
-  )
+  const visibleTasks = useMemo(() => {
+    let list = tasks
+    if (platforms) list = list.filter((t) => platforms.includes(t.platform))
+    if (onlyDdl) list = list.filter((t) => t.ddl)
+    return list
+  }, [tasks, onlyDdl, platforms])
 
   const stats = useMemo(() => {
     const pending = tasks.filter((t) => t.status === 'pending').length
