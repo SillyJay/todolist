@@ -16,7 +16,6 @@ import {
   wechatStop,
   wechatSimulate,
   wechatInstall,
-  wechatUninstall,
   wechatInit,
   type WeChatStatus
 } from '../lib/api'
@@ -126,18 +125,18 @@ export default function WeChatPanel(): React.JSX.Element {
       {/* 安装位置 + 一键安装 */}
       <div className="rounded-lg border border-[#26262f] bg-[#1a1a20] p-2.5 space-y-1.5">
         <div className="flex items-center gap-2 text-[11px]">
-          <span className="text-[#5c5c6a] w-20 shrink-0">安装目录</span>
-          <span className="text-[#9a9aa8] truncate" title={st?.install.active}>
-            {st?.install.active || '—'}
+          <span className="text-[#5c5c6a] w-20 shrink-0">运行文件</span>
+          <span className="text-[#9a9aa8] truncate" title={env?.path || ''}>
+            {env?.path || '未安装'}
           </span>
           <span
             className={`ml-auto shrink-0 px-1 py-0.5 rounded text-[10px] ${
-              st?.install.active?.startsWith('C:')
+              env?.path?.startsWith('C:')
                 ? 'bg-[#2a2218] text-[#e0b080]'
                 : 'bg-[#16302a] text-[#7ee2b8]'
             }`}
           >
-            {st?.install.active?.startsWith('C:') ? 'C 盘（回落）' : 'D 盘（优先）'}
+            {env?.path?.startsWith('C:') ? 'C 盘' : 'D 盘'}
           </span>
         </div>
         {st?.install.manifest?.size != null && (
@@ -150,7 +149,11 @@ export default function WeChatPanel(): React.JSX.Element {
           </div>
         )}
 
-        {!env?.installed ? (
+        {env?.installed ? (
+          <div className="text-[10.5px] text-[#4a4a58] pt-1">
+            由应用自带 Python 环境安装（pip），随应用一起管理
+          </div>
+        ) : (
           <div className="flex gap-2 pt-1">
             <input
               value={sourceUrl}
@@ -178,23 +181,6 @@ export default function WeChatPanel(): React.JSX.Element {
               一键安装
             </button>
           </div>
-        ) : (
-          <button
-            onClick={async () => {
-              setBusy(true)
-              try {
-                const r = await wechatUninstall()
-                setMsg(`已卸载（${r.removed.length} 个目录）`)
-                await reload()
-              } finally {
-                setBusy(false)
-              }
-            }}
-            disabled={busy}
-            className="text-[11px] text-[#8a8a98] hover:text-[#ff9aa2]"
-          >
-            卸载组件
-          </button>
         )}
       </div>
 

@@ -21,9 +21,16 @@ import threading
 from datetime import datetime
 from typing import Callable
 
-KEYWORDS = [
-    "作业", "截止", "提交", "ddl", "DDL", "交作业", "交报告", "报告",
-    "实验", "任务", "考试", "测验", "签到", "提交时间", "前提交", "之前",
+# 强关键词：只认「真的要交东西」的说法
+KEYWORDS = ["作业", "实验", "报告", "提交", "交到", "上传", "截止", "ddl", "DDL", "论文"]
+
+# 负向词：活动/招募/广告类，即使含「截止」也不当作业
+NEGATIVE = [
+    # 招揽/广告
+    "招募", "观众", "征集", "报名参赛", "大赛报名", "抽奖", "优惠", "包过",
+    "代写", "代做", "兼职", "招聘", "点赞", "转发", "砍价",
+    # 活动类（不是要交的作业）
+    "赛事", "选拔赛", "大赛", "竞赛", "参赛", "讲座", "晚会", "社团招新", "活动报名",
 ]
 
 CLI_NAMES = ["wechat-cli", "wechat-cli.exe"]
@@ -226,12 +233,25 @@ class WeChatListener:
             self._stop.wait(self.interval)
 
     def _poll_once(self) -> None:
-        code, out = _run(["new-messages", "--limit", "50"], timeout=45)
         self.last_poll = datetime.now().strftime("%H:%M:%S")
-        if code != 0:
-            self.last_error = out.strip()[:300] or f"退出码 {code}"
-            return
-        for msg in parse_new_messages(out):
+
+        # 有指定群：按群拉 history（每个会话能拿到多条，避免 new-messages 只给最后一条）
+        if self.groups:
+            messages: list[dict] = []
+            for group in self.groups:
+                code, out = _run(["history", group, "--limit", "30"], timeout=45)
+                if code != 0:
+                    self.last_error = (out.strip()[:200] or f"退出码 {code}")
+                    continue
+                messages.extend(parse_history(out, group))
+        else:
+            code, out = _run(["new-messages"], timeout=45)
+            if code != 0:
+                self.last_error = out.strip()[:300] or f"退出码 {code}"
+                return
+            messages = parse_new_messages(out)
+
+        for msg in messages:
             if self.groups and msg["group"] not in self.groups:
                 continue
             self.received += 1
@@ -245,8 +265,71 @@ class WeChatListener:
                     self.last_error = f"回调异常：{e}"
 
 
+def parse_history(raw: str, group: str = "") -> list[dict]:
+    """解析 `wechat-cli history "<群>"` 的输出。
+
+    实测结构（v0.2.4）：messages 是字符串数组，格式
+    "[2026-10-22 11:54] 发送人: 正文"
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+
+    chat = str(data.get("chat") or group)
+    items = data.get("messages") or []
+    out: list[dict] = []
+    for line in items:
+        if not isinstance(line, str):
+            continue
+        t, sender, text = _split_history_line(line)
+        if not text:
+            continue
+        out.append(
+            {
+                "group": chat,
+                "sender": sender,
+                "text": text[:500],
+                "time": t,
+                "msg_id": _digest(chat, f"{t}|{sender}", text),
+                "keyword_hit": _keyword_hit(text),
+                "is_group": bool(data.get("is_group")),
+                "msg_type": "",
+            }
+        )
+    return out
+
+
+def _split_history_line(line: str) -> tuple[str, str, str]:
+    """'[2026-10-22 11:54] 张三: 正文' → ('2026-10-22 11:54', '张三', '正文')"""
+    text = line.strip()
+    t = ""
+    if text.startswith("["):
+        end = text.find("]")
+        if end > 0:
+            t = text[1:end].strip()
+            text = text[end + 1 :].strip()
+    sender, body = "", text
+    if ":" in text:
+        head, _, rest = text.partition(":")
+        if len(head) <= 20:  # 发送人一般很短，避免误切正文里的冒号
+            sender, body = head.strip(), rest.strip()
+    return t, sender, body
+
+
 def parse_new_messages(raw: str) -> list[dict]:
-    """解析 new-messages 的 JSON 输出（字段命名做兼容）。"""
+    """解析 `wechat-cli new-messages` 的 JSON。
+
+    实测结构（2026-10, v0.2.4）：
+    {"first_call": true, "unread_count": 112, "messages": [
+      {"chat": "群名", "username": "xxx@chatroom", "is_group": true,
+       "unread": 71, "last_message": "正文", "msg_type": "文本",
+       "time": "12:22", "timestamp": 1792642929}]}
+    注意：每个会话只给「最后一条消息」，不是完整消息流。
+    """
     raw = (raw or "").strip()
     if not raw:
         return []
@@ -261,41 +344,69 @@ def parse_new_messages(raw: str) -> list[dict]:
         except json.JSONDecodeError:
             return []
 
-    if isinstance(data, dict):
-        items = data.get("messages") or data.get("data") or data.get("items") or []
-        if isinstance(items, dict):
-            items = items.get("messages") or []
-    elif isinstance(data, list):
-        items = data
-    else:
-        items = []
+    items = data.get("messages") if isinstance(data, dict) else data
+    if not isinstance(items, list):
+        return []
 
     out: list[dict] = []
     for m in items:
         if not isinstance(m, dict):
             continue
-        text = str(m.get("content") or m.get("text") or m.get("message") or "").strip()
-        if not text:
+        text = str(m.get("last_message") or m.get("content") or m.get("text") or "").strip()
+        if not text or text.startswith("["):
+            # 「[18条] xxx」这类折叠预览不解析
             continue
-        group = str(
-            m.get("chat_name") or m.get("chat") or m.get("talker") or m.get("room") or m.get("session") or ""
-        )
-        sender = str(m.get("sender_name") or m.get("sender") or m.get("from") or "")
-        mid = str(
-            m.get("server_id_str") or m.get("id") or m.get("msg_id") or _digest(group, sender, text)
-        )
+        group = str(m.get("chat") or m.get("chat_name") or "")
+        username = str(m.get("username") or "")
+        ts = m.get("timestamp") or 0
+        mid = f"{username}:{ts}" if username and ts else _digest(group, "", text)
         out.append(
             {
                 "group": group,
-                "sender": sender,
+                "sender": "",
                 "text": text[:500],
-                "time": str(m.get("create_time") or m.get("time") or "")
-                or datetime.now().isoformat(timespec="seconds"),
+                "time": str(m.get("time") or "") or datetime.now().isoformat(timespec="seconds"),
                 "msg_id": mid,
                 "keyword_hit": _keyword_hit(text),
+                "is_group": bool(m.get("is_group")),
+                "msg_type": str(m.get("msg_type") or ""),
             }
         )
     return out
+
+
+SALUTATIONS = ("各位同学", "同学们", "大家好", "老师好", "各位", "亲们")
+
+import re as _re
+
+_EMOJI_CODE = _re.compile(r"\[[A-Za-z\u4e00-\u9fa5]{1,6}\]")
+_EMOJI_CHAR = _re.compile(
+    "[\U0001F300-\U0001FAFF\U00002600-\U000027BF\U0001F000-\U0001F2FF]+"
+)
+
+
+def _clean_title(title: str) -> str:
+    t = _EMOJI_CODE.sub("", title or "")
+    t = _EMOJI_CHAR.sub("", t)
+    t = t.strip(" ｜|:：，,。.、-—~～\n\t")
+    return (t[:30] or "未命名任务")
+
+
+def clean_message_text(text: str) -> str:
+    """清洗群消息：去掉称呼行、纯 emoji 行、引用符号，压缩空行。"""
+    lines = []
+    for raw in (text or "").splitlines():
+        line = raw.strip().lstrip(">").strip()
+        if not line:
+            continue
+        if line.endswith("：") or line.endswith(":"):
+            if any(line.startswith(s) for s in SALUTATIONS):
+                continue
+        probe = _EMOJI_CODE.sub("", line).strip(" ：:，,。!！")
+        if any(probe == s for s in SALUTATIONS):
+            continue
+        lines.append(line)
+    return "\n".join(lines).strip()
 
 
 def _digest(group: str, sender: str, text: str) -> str:
@@ -303,6 +414,8 @@ def _digest(group: str, sender: str, text: str) -> str:
 
 
 def _keyword_hit(text: str) -> bool:
+    if any(n in text for n in NEGATIVE):
+        return False
     return any(k in text for k in KEYWORDS)
 
 
@@ -312,16 +425,24 @@ def message_to_task(msg: dict) -> dict | None:
         return None
     from ai.extract import extract
 
-    draft = extract(msg["text"], source="wechat")
+    cleaned = clean_message_text(msg["text"])
+    if not cleaned:
+        return None
+    draft = extract(cleaned, source="wechat")
     if not draft.get("is_task"):
         return None
+
+    # 防误报：本地规则解析且没识别到截止时间的，一律不入库
+    # （群消息里「作业」二字太常见，广告/闲聊会大量误伤）
+    if draft.get("engine") != "llm" and not draft.get("ddl"):
+        return None
     return {
-        "title": draft.get("title") or msg["text"][:20],
+        "title": _clean_title(draft.get("title") or cleaned[:20]),
         "course_name": draft.get("course_name"),
         "ddl": draft.get("ddl"),
         "summary": draft.get("summary"),
         "confidence": draft.get("confidence") or 0.4,
-        "raw_text": msg["text"],
+        "raw_text": cleaned,
         "source_msg_id": msg["msg_id"],
         "group": msg.get("group"),
     }
