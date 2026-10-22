@@ -269,6 +269,116 @@ class ChaoxingAdapter(BaseAdapter):
 
         return {"current_week": current_week, "lessons": merged}
 
+    # ---------- 作业附件 ----------
+
+    STATUS_URL = "https://mooc1.chaoxing.com/ananas/status/{objectid}"
+
+    def fetch_attachments(self, task_url: str) -> list[dict]:
+        """解析作业详情页，返回可下载的附件列表。
+
+        实测（2026-10）两类来源：
+        1. 云盘附件：`<iframe module="insertAttach" objectid="..." filename="..."
+           filetype="zip" filesize="336.24K">` —— objectid 是取文件的钥匙
+        2. 正文图片：`<img src="https://p.ananas.chaoxing.com/star3/origin/xxx.png">`
+
+        返回 [{key, name, size, kind, url}]，key 对云附件是 objectid，对图片是原始 URL。
+        """
+        if not task_url:
+            return []
+        with httpx.Client(
+            timeout=25,
+            follow_redirects=True,
+            headers={"User-Agent": UA, "Referer": "https://mooc1.chaoxing.com/"},
+            cookies=self.load_cookies(),
+        ) as cli:
+            resp = cli.get(task_url)
+            resp.raise_for_status()
+            html = resp.text
+
+        items: list[dict] = []
+        seen: set[str] = set()
+
+        # 1) 云盘附件
+        for m in re.finditer(r"""<iframe[^>]*module=["']insertAttach["'][^>]*>""", html, re.I):
+            tag = m.group(0)
+            oid = _attr(tag, "objectid")
+            if not oid or oid in seen:
+                continue
+            seen.add(oid)
+            name = _attr(tag, "filename") or f"{oid[:8]}.bin"
+            size_text = _attr(tag, "filesize") or ""
+            items.append(
+                {
+                    "key": oid,
+                    "name": _unescape(name),
+                    "size": _parse_size(size_text),
+                    "size_text": size_text,
+                    "kind": "file",
+                    "ext": (_attr(tag, "filetype") or "").lower(),
+                    "url": f"chaoxing://object/{oid}",
+                }
+            )
+
+        # 2) 正文图片（跳过图标/表情）
+        for m in re.finditer(r'<img[^>]+src="(https?://p\.ananas\.chaoxing\.com/[^"]+)"', html, re.I):
+            url = m.group(1)
+            if url in seen:
+                continue
+            seen.add(url)
+            fname = url.split("?")[0].rsplit("/", 1)[-1] or "图片.png"
+            items.append(
+                {
+                    "key": url,
+                    "name": fname,
+                    "size": 0,
+                    "size_text": "",
+                    "kind": "image",
+                    "ext": fname.rsplit(".", 1)[-1].lower() if "." in fname else "png",
+                    "url": url,
+                }
+            )
+
+        return items
+
+    def resolve_download_url(self, objectid: str) -> dict:
+        """objectid → 真实下载地址（含临时签名）。
+
+        实测：`/ananas/status/{objectid}` 返回
+        {"download": "http://d0.cldisk.com/download/<oid>?at_=..&ak_=..&ad_=..",
+         "filename": "陈永杰.zip", "length": 344310, "crc": "..."}
+        签名带时效，必须现取现下，不能缓存复用。
+        """
+        with httpx.Client(
+            timeout=25,
+            headers={"User-Agent": UA, "Referer": "https://mooc1.chaoxing.com/"},
+            cookies=self.load_cookies(),
+        ) as cli:
+            resp = cli.get(self.STATUS_URL.format(objectid=objectid))
+            resp.raise_for_status()
+            if "json" not in (resp.headers.get("content-type") or ""):
+                raise ValueError("取下载地址失败（可能登录态失效）")
+            return resp.json()
+
+    def download_attachment(self, item: dict) -> tuple[bytes, str]:
+        """下载单个附件，返回 (内容, 文件名)。"""
+        headers = {"User-Agent": UA, "Referer": "https://mooc1.chaoxing.com/"}
+        with httpx.Client(timeout=90, follow_redirects=True, headers=headers,
+                          cookies=self.load_cookies()) as cli:
+            if item.get("kind") == "image":
+                resp = cli.get(item["url"])
+                resp.raise_for_status()
+                name = item.get("name") or "图片.png"
+                return resp.content, name
+
+            meta = self.resolve_download_url(item["key"])
+            url = meta.get("download")
+            if not url:
+                raise ValueError("该附件没有可用的下载地址")
+            resp = cli.get(url, timeout=120)
+            resp.raise_for_status()
+            name = meta.get("filename") or item.get("name") or "附件"
+            return resp.content, name
+
     # ---------- 数据抓取 ----------
 
     def _client(self) -> httpx.Client:
@@ -395,6 +505,34 @@ class ChaoxingAdapter(BaseAdapter):
         return out
 
 
+
+
+def _attr(tag: str, name: str) -> str:
+    """从 HTML 标签字符串里取属性值（兼容单双引号）。"""
+    m = re.search(rf'{name}\s*=\s*"([^"]*)"', tag, re.I) or re.search(
+        rf"{name}\s*=\s*'([^']*)'", tag, re.I
+    )
+    return m.group(1) if m else ""
+
+
+def _unescape(text: str) -> str:
+    import html as _html
+
+    return _html.unescape(text or "")
+
+
+def _parse_size(text: str) -> int:
+    """'336.24K' / '14.81M' → 字节数；解析不了返回 0。"""
+    t = (text or "").strip().upper().replace("B", "")
+    if not t:
+        return 0
+    unit = t[-1] if t[-1] in "KMG" else ""
+    num = t[:-1] if unit else t
+    try:
+        value = float(num)
+    except ValueError:
+        return 0
+    return int(value * {"": 1, "K": 1024, "M": 1024**2, "G": 1024**3}[unit])
 
 
 def _merge_sections(lessons: list[dict]) -> list[dict]:

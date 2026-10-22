@@ -257,6 +257,44 @@ export interface WorkspaceInfo {
 export const workspaceInfo = (): Promise<WorkspaceInfo> => request('/files/workspace')
 export const openWorkspace = (): Promise<{ ok: boolean; root: string }> =>
   request('/files/open-workspace', { method: 'POST' })
+export interface AttachmentItem {
+  key: string
+  name: string
+  size: number
+  size_text: string
+  kind: 'file' | 'image'
+  ext: string
+  url: string
+  downloaded: boolean
+  file_id?: number | null
+}
+
+export const listAttachments = (
+  taskId: number
+): Promise<{ items: AttachmentItem[]; count: number; supported: boolean; message: string }> =>
+  request(`/files/attachments?task_id=${taskId}`)
+
+export const downloadAttachments = (
+  taskId: number,
+  keys?: string[]
+): Promise<{
+  ok: boolean
+  downloaded: { name: string; size: number; path: string }[]
+  failed: { name: string; error: string }[]
+  skipped: string[]
+  message: string
+}> =>
+  request('/files/download-attachments', {
+    method: 'POST',
+    body: JSON.stringify({ task_id: taskId, keys })
+  })
+
+export const openFile = (fileId: number): Promise<{ ok: boolean; path: string }> =>
+  request(`/files/${fileId}/open`, { method: 'POST' })
+
+export const revealFile = (fileId: number): Promise<{ ok: boolean; path: string }> =>
+  request(`/files/${fileId}/reveal`, { method: 'POST' })
+
 export const listFiles = (taskId?: number): Promise<{ items: { id: number; name: string; local_path: string; size: number; platform: string }[] }> =>
   request(`/files${taskId ? `?task_id=${taskId}` : ''}`)
 
