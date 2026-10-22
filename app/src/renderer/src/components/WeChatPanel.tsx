@@ -17,18 +17,23 @@ import {
   wechatSimulate,
   wechatInstall,
   wechatInit,
+  wechatLaunch,
+  wechatGroups,
   type WeChatStatus
 } from '../lib/api'
 
 /** 微信监听面板（规格 §5 模块 3） */
 export default function WeChatPanel(): React.JSX.Element {
   const [st, setSt] = useState<WeChatStatus | null>(null)
-  const [groups, setGroups] = useState('')
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [testText, setTestText] = useState('')
   const [sourceUrl, setSourceUrl] = useState('')
   const [initOutput, setInitOutput] = useState('')
+  const [allGroups, setAllGroups] = useState<{ name: string; unread: number; last_message: string }[]>([])
+  const [selected, setSelected] = useState<string[]>([])
+  const [search, setSearch] = useState('')
+  const [loadingGroups, setLoadingGroups] = useState(false)
   const [testResult, setTestResult] = useState('')
   const timer = useRef<number | null>(null)
 
@@ -36,7 +41,7 @@ export default function WeChatPanel(): React.JSX.Element {
     try {
       const s = await wechatStatus()
       setSt(s)
-      setGroups((g) => (g === '' ? s.config_groups.join(', ') : g))
+      setSelected((prev) => (prev.length ? prev : s.config_groups))
     } catch (e) {
       setMsg(String(e))
     }
@@ -46,6 +51,18 @@ export default function WeChatPanel(): React.JSX.Element {
     void reload()
   }, [reload])
 
+  const loadGroups = useCallback(async () => {
+    setLoadingGroups(true)
+    try {
+      const r = await wechatGroups()
+      setAllGroups(r.groups)
+    } catch (e) {
+      setMsg(String(e))
+    } finally {
+      setLoadingGroups(false)
+    }
+  }, [])
+
   // 运行中每 5 秒刷新一次状态
   useEffect(() => {
     if (st?.listener.state !== 'running') return
@@ -54,18 +71,6 @@ export default function WeChatPanel(): React.JSX.Element {
       if (timer.current) window.clearInterval(timer.current)
     }
   }, [st?.listener.state, reload])
-
-  const saveGroups = async (): Promise<void> => {
-    setBusy(true)
-    try {
-      const list = groups.split(/[,，\n]/).map((g) => g.trim()).filter(Boolean)
-      await wechatSaveGroups(list)
-      setMsg(`已保存 ${list.length} 个群`)
-      await reload()
-    } finally {
-      setBusy(false)
-    }
-  }
 
   const start = async (): Promise<void> => {
     setBusy(true)
@@ -184,28 +189,118 @@ export default function WeChatPanel(): React.JSX.Element {
         )}
       </div>
 
-      {/* 群配置 */}
+      {/* 群配置：勾选 */}
       <div>
-        <div className="text-[11px] text-[#5c5c6a] mb-1">监听的群（逗号分隔，留空=全部群）</div>
-        <div className="flex gap-2">
-          <input
-            value={groups}
-            onChange={(e) => setGroups(e.target.value)}
-            placeholder="软件工程2班, 高数答疑群"
-            className="flex-1 px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[12.5px] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
-          />
-          <button
-            onClick={() => void saveGroups()}
-            disabled={busy}
-            className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff] disabled:opacity-50"
-          >
-            保存
-          </button>
+        <div className="flex items-center justify-between mb-1">
+          <span className="text-[11px] text-[#5c5c6a]">
+            监听的群（已选 {selected.length} 个，不选则监听全部）
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => void loadGroups()}
+              disabled={loadingGroups || !env?.initialized}
+              className="text-[10.5px] text-[#6b6b7a] hover:text-[#4f8cff] disabled:opacity-40"
+            >
+              {loadingGroups ? '读取中…' : '读取群列表'}
+            </button>
+            <button
+              onClick={async () => {
+                setBusy(true)
+                try {
+                  await wechatSaveGroups(selected)
+                  setMsg(`已保存 ${selected.length} 个群`)
+                  await reload()
+                } finally {
+                  setBusy(false)
+                }
+              }}
+              disabled={busy}
+              className="text-[10.5px] text-[#7db4ff] hover:text-[#a9c9ff] disabled:opacity-40"
+            >
+              保存选择
+            </button>
+          </div>
         </div>
+
+        {allGroups.length === 0 ? (
+          <div className="text-[11px] text-[#4a4a58] py-1.5">
+            还没读取群列表。点右上「读取群列表」，会从微信会话里列出所有群。
+          </div>
+        ) : (
+          <>
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="搜索群名"
+              className="w-full mb-1.5 px-2.5 py-1 rounded-md bg-[#16161a] border border-[#2e2e38] text-[11.5px] outline-none focus:border-[#4f8cff] placeholder:text-[#3d3d48]"
+            />
+            <div className="max-h-44 overflow-y-auto rounded-md border border-[#26262f] divide-y divide-[#22222a]">
+              {allGroups
+                .filter((g) => !search || g.name.includes(search))
+                .map((g) => {
+                  const checked = selected.includes(g.name)
+                  return (
+                    <button
+                      key={g.name}
+                      onClick={() =>
+                        setSelected((prev) =>
+                          prev.includes(g.name) ? prev.filter((x) => x !== g.name) : [...prev, g.name]
+                        )
+                      }
+                      className={`w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-[#1c1c22] ${
+                        checked ? 'bg-[#1a2130]' : ''
+                      }`}
+                    >
+                      <span
+                        className={`w-3.5 h-3.5 shrink-0 rounded border flex items-center justify-center ${
+                          checked ? 'bg-[#4f8cff] border-[#4f8cff]' : 'border-[#5f6b7a]'
+                        }`}
+                      >
+                        {checked && <Check size={9} className="text-white" strokeWidth={3} />}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[11.5px] text-[#c8c8d4] truncate">{g.name}</span>
+                        {g.last_message && (
+                          <span className="block text-[10px] text-[#4a4a58] truncate">
+                            {g.last_message}
+                          </span>
+                        )}
+                      </span>
+                      {g.unread > 0 && (
+                        <span className="text-[9.5px] px-1 rounded bg-[#2a1f2a] text-[#e0a0c0] shrink-0">
+                          {g.unread > 99 ? '99+' : g.unread}
+                        </span>
+                      )}
+                    </button>
+                  )
+                })}
+            </div>
+          </>
+        )}
       </div>
 
       {/* 启停 */}
       <div className="flex items-center gap-2">
+        {!env?.wechat_running && (
+          <button
+            onClick={async () => {
+              setBusy(true)
+              setMsg('正在启动微信…')
+              try {
+                const r = await wechatLaunch()
+                setMsg(r.message)
+                await new Promise((res) => setTimeout(res, 4000))
+                await reload()
+              } finally {
+                setBusy(false)
+              }
+            }}
+            disabled={busy}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#242430] text-[11.5px] text-[#d0d0da] disabled:opacity-40"
+          >
+            唤起微信
+          </button>
+        )}
         {listener?.state === 'running' ? (
           <button
             onClick={() => void stop()}

@@ -287,6 +287,13 @@ export const wechatInstall = (
     body: JSON.stringify({ source, sha256 })
   })
 
+export const wechatGroups = (): Promise<{
+  groups: { name: string; username: string; unread: number; last_message: string }[]
+}> => request('/adapters/wechat/groups')
+
+export const wechatLaunch = (): Promise<{ ok: boolean; code?: string; message: string }> =>
+  request('/adapters/wechat/launch', { method: 'POST' })
+
 export const wechatInit = (): Promise<{ ok: boolean; message: string; output?: string }> =>
   request('/adapters/wechat/init', { method: 'POST' })
 

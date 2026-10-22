@@ -397,45 +397,41 @@ def wechat_config(body: WeChatConfig, db: Session = Depends(get_db)):
 def wechat_start(db: Session = Depends(get_db)):
     cfg = db.get(Setting, "wechat_groups")
     groups = [g for g in (cfg.value.split(",") if cfg and cfg.value else []) if g]
+    return wechat.start(groups, _wechat_on_message)
 
-    def on_message(msg: dict) -> None:
-        """命中关键词的消息 → 提取任务 → 入库（按消息 id 去重）。"""
-        from db.database import SessionLocal
 
-        draft = message_to_task(msg)
-        if not draft:
-            return
-        session = SessionLocal()
-        try:
-            exists = (
-                session.query(Task)
-                .filter(Task.platform == "wechat", Task.source_msg_id == draft["source_msg_id"])
-                .first()
-            )
-            if exists:
-                return
-            session.add(
-                Task(
-                    platform="wechat",
-                    course_name=draft.get("course_name"),
-                    course_abbr=(draft.get("course_name") or "")[:8] or None,
-                    title=draft["title"],
-                    ddl=draft.get("ddl"),
-                    status="pending",
-                    summary=draft.get("summary"),
-                    raw_text=draft.get("raw_text"),
-                    confidence=draft.get("confidence"),
-                    source_msg_id=draft["source_msg_id"],
-                    in_semester=1,
-                    created_at=_now(),
-                    updated_at=_now(),
-                )
-            )
-            session.commit()
-        finally:
-            session.close()
+def auto_start_wechat() -> dict:
+    """应用启动时调用：微信已在运行 + 已初始化 + 配了群 → 自动开始监听。"""
+    from adapters.wechat_listener import keys_ready, wechat_running
+    from db.database import SessionLocal
 
-    return wechat.start(groups, on_message)
+    if not (wechat_running() and keys_ready()):
+        return {"ok": False, "message": "微信未运行或未初始化"}
+    db = SessionLocal()
+    try:
+        cfg = db.get(Setting, "wechat_groups")
+        groups = [g for g in (cfg.value.split(",") if cfg and cfg.value else []) if g]
+    finally:
+        db.close()
+    if not groups:
+        return {"ok": False, "message": "未配置监听群"}
+    return wechat.start(groups, _wechat_on_message)
+
+
+@router.get("/wechat/groups")
+def wechat_groups():
+    """列出微信里的群，供用户勾选要监听的群。"""
+    from adapters.wechat_listener import list_groups
+
+    return {"groups": list_groups()}
+
+
+@router.post("/wechat/launch")
+def wechat_launch():
+    """唤起微信客户端（用户点按钮时触发，非静默拉起）。"""
+    from adapters.wechat_listener import launch_wechat
+
+    return launch_wechat()
 
 
 @router.post("/wechat/init")
@@ -444,7 +440,6 @@ def wechat_init():
     from adapters.wechat_listener import run_init
 
     return run_init()
-
 
 @router.post("/wechat/stop")
 def wechat_stop():

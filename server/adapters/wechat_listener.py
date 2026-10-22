@@ -111,6 +111,69 @@ def wechat_running() -> bool:
         return False
 
 
+def find_weixin_exe() -> str | None:
+    """定位微信主程序（4.x = Weixin.exe）。"""
+    candidates = [
+        r"D://Program Files//Weixin//Weixin.exe",
+        r"C://Program Files//Tencent//Weixin//Weixin.exe",
+        r"C://Program Files//Tencent//WeChat//WeChat.exe",
+        os.path.join(os.environ.get("PROGRAMFILES", ""), "Tencent", "Weixin", "Weixin.exe"),
+        os.path.join(os.environ.get("PROGRAMFILES(X86)", ""), "Tencent", "WeChat", "WeChat.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "Tencent", "Weixin", "Weixin.exe"),
+    ]
+    for c in candidates:
+        if c and os.path.exists(c):
+            return c
+    # 兜底：从注册表/开始菜单找不到就返回 None
+    return None
+
+
+def launch_wechat() -> dict:
+    """唤醒微信客户端（只启动进程，不注入、不控制 UI）。"""
+    if wechat_running():
+        return {"ok": True, "message": "微信已在运行"}
+    exe = find_weixin_exe()
+    if not exe:
+        return {"ok": False, "code": "NOT_FOUND", "message": "没找到微信安装路径，请手动启动微信"}
+    try:
+        os.startfile(exe)  # noqa: S606 - 启动用户已安装的客户端
+    except OSError as e:
+        return {"ok": False, "code": "LAUNCH_FAILED", "message": f"启动失败：{e}"}
+    return {"ok": True, "message": "已启动微信，请扫码/确认登录", "exe": exe}
+
+
+def list_groups(limit: int = 200) -> list[dict]:
+    """列出可监听的群（来自 sessions，过滤 is_group）。"""
+    code, out = _run(["sessions", "--limit", str(limit)], timeout=60)
+    if code != 0:
+        return []
+    try:
+        data = json.loads(out)
+    except json.JSONDecodeError:
+        start, end = out.find("["), out.rfind("]")
+        if start < 0 or end <= start:
+            return []
+        try:
+            data = json.loads(out[start : end + 1])
+        except json.JSONDecodeError:
+            return []
+
+    groups = []
+    for item in data if isinstance(data, list) else []:
+        if not isinstance(item, dict) or not item.get("is_group"):
+            continue
+        groups.append(
+            {
+                "name": str(item.get("chat") or ""),
+                "username": str(item.get("username") or ""),
+                "unread": int(item.get("unread") or 0),
+                "last_message": str(item.get("last_message") or "")[:60],
+            }
+        )
+    groups.sort(key=lambda g: (-g["unread"], g["name"]))
+    return groups
+
+
 def keys_ready() -> bool:
     return os.path.exists(KEYS_FILE)
 

@@ -114,6 +114,41 @@ def summarize(body: SummarizeBody, db: Session = Depends(get_db)):
     return {"summary": summary, "cached": False}
 
 
+def _runtime_context(db: Session) -> str:
+    """给模型注入当前时间/教学周/数据概况，避免它算错日期。"""
+    from datetime import date
+
+    from db.models import CourseSchedule, Setting, Task
+
+    now = datetime.now().astimezone()
+    weekdays = "一二三四五六日"
+    lines = [
+        "## 当前环境",
+        f"- 现在：{now.strftime('%Y-%m-%d %H:%M')}（周{weekdays[now.weekday()]}）",
+    ]
+
+    week = db.get(Setting, "curriculum_week")
+    if week and week.value:
+        lines.append(f"- 当前教学周：第 {week.value} 周")
+
+    pending = db.query(Task).filter(Task.status == "pending").count()
+    with_ddl = (
+        db.query(Task).filter(Task.status == "pending", Task.ddl.isnot(None)).count()
+    )
+    lines.append(f"- 待办任务：{pending} 条（其中 {with_ddl} 条有明确截止时间）")
+
+    today = date.today()
+    courses = db.query(CourseSchedule).filter(CourseSchedule.weekday == today.isoweekday()).all()
+    courses.sort(key=lambda r: r.start_time or "")
+    if courses:
+        brief = "；".join(f"{c.course_abbr or c.course_name} {c.start_time}" for c in courses[:6])
+        lines.append(f"- 今天课程：{brief}")
+    else:
+        lines.append("- 今天没有课")
+
+    return "\n".join(lines)
+
+
 def _sse(event: dict) -> str:
     return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
@@ -128,7 +163,9 @@ def chat(body: ChatBody, db: Session = Depends(get_db)):
             yield "data: [DONE]\n\n"
             return
 
-        messages: list[dict] = [{"role": "system", "content": AGENT_SYSTEM_PROMPT}]
+        messages: list[dict] = [
+            {"role": "system", "content": AGENT_SYSTEM_PROMPT + "\n\n" + _runtime_context(db)}
+        ]
         for h in body.history[-8:]:
             if h.role in ("user", "assistant") and h.content:
                 messages.append({"role": h.role, "content": h.content})
