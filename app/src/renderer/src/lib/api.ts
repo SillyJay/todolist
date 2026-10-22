@@ -24,10 +24,10 @@ export function getBaseUrl(): Promise<string> {
   return baseUrlPromise
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function request<T>(path: string, init?: RequestInit, timeoutMs = 8000): Promise<T> {
   const base = await getBaseUrl()
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), 8000)
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
   try {
     const res = await fetch(`${base}${path}`, {
       headers: { 'Content-Type': 'application/json' },
@@ -267,6 +267,7 @@ export interface AttachmentItem {
   url: string
   downloaded: boolean
   file_id?: number | null
+  dir?: string
 }
 
 export const listAttachments = (
@@ -284,10 +285,14 @@ export const downloadAttachments = (
   skipped: string[]
   message: string
 }> =>
-  request('/files/download-attachments', {
-    method: 'POST',
-    body: JSON.stringify({ task_id: taskId, keys })
-  })
+  request(
+    '/files/download-attachments',
+    {
+      method: 'POST',
+      body: JSON.stringify({ task_id: taskId, keys })
+    },
+    240000 // 小雅走浏览器逐个下载，单文件可能要 20-30 秒
+  )
 
 export const openFile = (fileId: number): Promise<{ ok: boolean; path: string }> =>
   request(`/files/${fileId}/open`, { method: 'POST' })

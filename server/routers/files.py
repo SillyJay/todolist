@@ -1,5 +1,6 @@
 """文件路由（规格 §7.4 + Phase 3）：附件下载、列表、原生预览、工作区浏览。"""
 import os
+import re
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -71,34 +72,139 @@ def open_workspace():
     return {"ok": True, "root": root}
 
 
+def _xiaoya_group_id(url: str | None) -> str | None:
+    """从小雅任务链接里取课程 group_id：/jx-stem/mycourse/{gid}/task"""
+    if not url:
+        return None
+    m = re.search(r"/mycourse/(\d+)", url)
+    return m.group(1) if m else None
+
+
+def _download_xiaoya(task: Task, keys: list[str] | None, db: Session) -> dict:
+    """小雅文件下载：浏览器逐个点「下载」菜单，落临时目录后复制进工作区。"""
+    import shutil
+    import tempfile
+
+    from adapters.xiaoya import XiaoyaAdapter
+    from services.workspace import save_existing_file
+
+    group_id = _xiaoya_group_id(task.url)
+    if not group_id:
+        raise HTTPException(400, "该任务没有课程链接，无法定位文件")
+
+    adapter = XiaoyaAdapter()
+    try:
+        items = adapter.list_course_files(group_id, task.title)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(502, f"读取文件列表失败：{e}") from e
+
+    if keys:
+        wanted = set(keys)
+        items = [i for i in items if i["key"] in wanted]
+    if not items:
+        return {"ok": True, "downloaded": [], "failed": [], "skipped": [], "message": "没有可下载的文件"}
+
+    rows = db.query(File).filter(File.task_id == task.id).all()
+    existing_keys = {f.origin_key for f in rows if f.origin_key}
+    existing_names = {f.name for f in rows}
+
+    def _done(i: dict) -> bool:
+        return i["key"] in existing_keys or i["name"] in existing_names
+
+    todo = [i for i in items if not _done(i)]
+    skipped = [i["name"] for i in items if _done(i)]
+    if not todo:
+        return {
+            "ok": True,
+            "downloaded": [],
+            "failed": [],
+            "skipped": skipped,
+            "message": f"全部已下载（{len(skipped)} 个）",
+        }
+
+    tmp = tempfile.mkdtemp(prefix="xiaoya_dl_")
+    downloaded, failed = [], []
+    try:
+        results = adapter.download_course_files(group_id, todo, tmp)
+        # 下载结果按文件名回连到发现阶段的 key（Playwright 只回传文件名）
+        key_by_name = {i["name"]: i["key"] for i in todo}
+        for r in results:
+            if r.get("error"):
+                failed.append({"name": r.get("name", ""), "error": r["error"]})
+                continue
+            src = r.get("path")
+            if not src or not os.path.exists(src):
+                failed.append({"name": r.get("name", ""), "error": "文件未落盘"})
+                continue
+            path, digest = save_existing_file(src, task, r["name"])
+            db.add(
+                File(
+                    task_id=task.id,
+                    platform=task.platform,
+                    name=r["name"],
+                    local_path=path,
+                    origin="attachment",
+                    origin_key=key_by_name.get(r["name"]),
+                    file_hash=digest,
+                    created_at=datetime.now().isoformat(timespec="seconds"),
+                )
+            )
+            downloaded.append({"name": r["name"], "size": os.path.getsize(path), "path": path})
+        db.commit()
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+
+    return {
+        "ok": True,
+        "downloaded": downloaded,
+        "failed": failed,
+        "skipped": skipped,
+        "message": f"成功 {len(downloaded)} 个"
+        + (f"，跳过已下载 {len(skipped)} 个" if skipped else "")
+        + (f"，失败 {len(failed)} 个" if failed else ""),
+    }
+
+
 @router.get("/attachments")
 def list_attachments(task_id: int, db: Session = Depends(get_db)):
-    """发现任务附件（不下载）。目前学习通支持，小雅待补。"""
+    """发现任务附件（不下载）。学习通走页面解析，小雅走课程内容树。"""
     task = db.get(Task, task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
 
-    if task.platform != "chaoxing":
+    if task.platform not in ("chaoxing", "xiaoya"):
         return {
             "items": [],
             "count": 0,
             "supported": False,
-            "message": f"{task.platform} 的附件发现尚未实现" if task.platform == "xiaoya" else "该平台没有附件概念",
+            "message": "该平台没有附件概念",
         }
 
-    if not task.url:
-        return {"items": [], "count": 0, "supported": True, "message": "该任务没有详情链接"}
+    if task.platform == "xiaoya":
+        group_id = _xiaoya_group_id(task.url)
+        if not group_id:
+            return {"items": [], "count": 0, "supported": True, "message": "该任务没有课程链接"}
+        from adapters.xiaoya import XiaoyaAdapter
 
-    from adapters.chaoxing import ChaoxingAdapter
+        try:
+            items = XiaoyaAdapter().list_course_files(group_id, task.title)
+        except Exception as e:  # noqa: BLE001
+            return {"items": [], "count": 0, "supported": True, "message": f"读取失败：{e}"}
+    else:
+        if not task.url:
+            return {"items": [], "count": 0, "supported": True, "message": "该任务没有详情链接"}
+        from adapters.chaoxing import ChaoxingAdapter
 
-    try:
-        items = ChaoxingAdapter().fetch_attachments(task.url)
-    except Exception as e:  # noqa: BLE001
-        return {"items": [], "count": 0, "supported": True, "message": f"读取失败：{e}"}
+        try:
+            items = ChaoxingAdapter().fetch_attachments(task.url)
+        except Exception as e:  # noqa: BLE001
+            return {"items": [], "count": 0, "supported": True, "message": f"读取失败：{e}"}
 
-    by_name = {f.name: f.id for f in db.query(File).filter(File.task_id == task_id).all()}
+    rows = db.query(File).filter(File.task_id == task_id).all()
+    by_key = {f.origin_key: f.id for f in rows if f.origin_key}
+    by_name = {f.name: f.id for f in rows}
     for i in items:
-        fid = by_name.get(i["name"])
+        fid = by_key.get(i["key"]) or by_name.get(i["name"])
         i["downloaded"] = fid is not None
         i["file_id"] = fid
 
@@ -107,10 +213,16 @@ def list_attachments(task_id: int, db: Session = Depends(get_db)):
 
 @router.post("/download-attachments")
 def download_attachments(body: BulkDownloadBody, db: Session = Depends(get_db)):
-    """批量下载任务附件并归档到工作区。逐个下，单个失败不影响其他。"""
+    """批量下载任务附件并归档到工作区。逐个下，单个失败不影响其他。
+
+    学习通 = 纯 HTTP（status 接口换签名地址）；
+    小雅 = Playwright 逐个点「下载」菜单（接口返回加密串，无法直取）。
+    """
     task = db.get(Task, body.task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
+    if task.platform == "xiaoya":
+        return _download_xiaoya(task, body.keys, db)
     if task.platform != "chaoxing":
         raise HTTPException(400, "该平台附件下载尚未实现")
 
@@ -128,12 +240,14 @@ def download_attachments(body: BulkDownloadBody, db: Session = Depends(get_db)):
     if not items:
         return {"ok": True, "downloaded": [], "failed": [], "message": "没有可下载的附件"}
 
-    existing = {f.name for f in db.query(File).filter(File.task_id == task.id).all()}
+    rows = db.query(File).filter(File.task_id == task.id).all()
+    existing_keys = {f.origin_key for f in rows if f.origin_key}
+    existing_names = {f.name for f in rows}
     downloaded, failed, skipped = [], [], []
 
     for item in items:
         name_guess = item.get("name") or ""
-        if name_guess and name_guess in existing:
+        if item.get("key") in existing_keys or (name_guess and name_guess in existing_names):
             skipped.append(name_guess)
             continue
         try:
@@ -153,6 +267,7 @@ def download_attachments(body: BulkDownloadBody, db: Session = Depends(get_db)):
             name=filename,
             local_path=path,
             origin="attachment",
+            origin_key=item.get("key"),
             file_hash=digest,
             created_at=datetime.now().isoformat(timespec="seconds"),
         )

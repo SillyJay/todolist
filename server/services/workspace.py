@@ -14,6 +14,7 @@
 """
 import hashlib
 import os
+import shutil
 import re
 
 from config import app_root
@@ -80,6 +81,30 @@ def save_bytes(data: bytes, task, filename: str) -> tuple[str, str]:
     with open(target, "wb") as f:
         f.write(data)
     return target, digest
+
+
+def save_existing_file(src: str, task, filename: str) -> tuple[str, str]:
+    """把已下载到临时目录的文件复制进任务目录，返回 (路径, sha256)。
+
+    用于浏览器下载场景（Playwright 只能落盘，不能直接拿 bytes），
+    避免把几十 MB 的文件整个读进内存。
+    """
+    folder = task_dir(task)
+    safe_name = _sanitize(filename, "附件")
+    target = os.path.join(folder, safe_name)
+    stem, ext = os.path.splitext(safe_name)
+    i = 1
+    while os.path.exists(target):
+        target = os.path.join(folder, f"{stem}({i}){ext}")
+        i += 1
+
+    shutil.copy2(src, target)
+
+    digest = hashlib.sha256()
+    with open(target, "rb") as f:
+        for chunk in iter(lambda: f.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return target, digest.hexdigest()
 
 
 def tree(limit_platforms: int = 20) -> list[dict]:

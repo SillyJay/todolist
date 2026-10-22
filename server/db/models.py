@@ -57,6 +57,7 @@ class File(Base):
     name = Column(Text)
     local_path = Column(Text)                      # 归档后的路径
     origin = Column(Text)                          # attachment / wechat_group / user_drop
+    origin_key = Column(Text)                      # 平台侧唯一标识：学习通 objectid / 小雅 resource_id
     file_hash = Column(Text)                       # 去重
     created_at = Column(Text)
 

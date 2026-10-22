@@ -32,6 +32,9 @@ def _migrate() -> None:
             ("in_semester", "INTEGER DEFAULT 1"),
             ("semester", "TEXT"),
         ],
+        "files": [
+            ("origin_key", "TEXT"),
+        ],
     }
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())

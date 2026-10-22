@@ -89,6 +89,8 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
   }
 
   const pendingCount = attachments.filter((a) => !a.downloaded).length
+  const isXiaoya = task?.platform === 'xiaoya'
+  const downloadHint = isXiaoya ? '小雅需逐个触发浏览器下载，约 20-30 秒' : ''
 
   return (
     <aside className="h-full flex flex-col bg-[#131317] border-l border-[#24242c]">
@@ -152,7 +154,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                       ) : (
                         <Download size={10} />
                       )}
-                      {downloading ? '下载中…' : '全部下载'}
+                      {downloading ? (isXiaoya ? '下载中（约 20 秒）' : '下载中…') : '全部下载'}
                     </button>
                   )}
                 </div>
@@ -179,7 +181,7 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                         )}
                         <span
                           className="min-w-0 flex-1 text-[11.5px] text-[#c0c0cc] truncate"
-                          title={a.name}
+                          title={a.dir ? `${a.name}\n目录：${a.dir}` : a.name}
                         >
                           {a.name}
                         </span>
@@ -216,6 +218,10 @@ function AiPanel({ task }: { task: Task | null }): React.JSX.Element {
                       </div>
                     ))}
                   </div>
+                )}
+
+                {downloadHint && pendingCount > 0 && !attMsg && (
+                  <div className="mt-1 text-[10.5px] text-[#5c5c6a]">{downloadHint}</div>
                 )}
 
                 {attMsg && attachments.length > 0 && (
