@@ -314,9 +314,9 @@ function TaskCard({
     urgency === 'danger'
       ? 'bg-[var(--danger)]'
       : urgency === 'warn'
-        ? 'bg-[#f59e0b]'
+        ? 'bg-[var(--warn)]'
         : urgency === 'near'
-          ? 'bg-[#eab308]'
+          ? 'bg-[var(--near)]'
           : 'bg-transparent'
   const done = task.status === 'done'
 
@@ -337,7 +337,9 @@ function TaskCard({
           onToggle()
         }}
         className={`mt-0.5 w-4 h-4 shrink-0 rounded border flex items-center justify-center transition-colors ${
-          done ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-[#4a4a58] hover:border-[var(--accent)]'
+          done
+            ? 'bg-[var(--accent)] border-[var(--accent)]'
+            : 'border-[var(--muted)] hover:border-[var(--accent)]'
         }`}
       >
         {done && <Check size={11} className="text-white" strokeWidth={3} />}
@@ -345,7 +347,7 @@ function TaskCard({
 
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
-          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[#2a2a34] text-[var(--faint)]">
+          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--faint)]">
             {PLATFORM_LABEL[task.platform] ?? task.platform}
           </span>
           {task.confidence != null && task.confidence < 0.8 && (

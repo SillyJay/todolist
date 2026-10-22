@@ -377,7 +377,7 @@ function CalendarPage({
 
         {/* 月历 / 列表 */}
         {view === 'month' ? (
-          <div className="grid grid-cols-7 gap-px bg-[#26262f] rounded-lg overflow-hidden border border-[var(--border)] shrink-0">
+          <div className="grid grid-cols-7 gap-px bg-[var(--border)] rounded-lg overflow-hidden border border-[var(--border)] shrink-0">
             {WEEK_CN.map((w) => (
               <div key={w} className="bg-[var(--bg-deep)] py-1.5 text-center text-[11px] text-[var(--faint)]">
                 周{w}
@@ -557,7 +557,7 @@ function CalendarPage({
                   <div key={t.id} className="flex items-center gap-1.5 text-[11.5px]">
                     <span className="w-1.5 h-1.5 rounded-full bg-[var(--violet)]" />
                     <span className="text-[var(--violet)] truncate">{t.title}</span>
-                    <span className="text-[10px] text-[#a06a80] ml-auto">
+                    <span className="text-[10px] text-[var(--violet)] opacity-70 ml-auto">
                       {t.ddl?.slice(11, 16)}
                     </span>
                   </div>
@@ -601,7 +601,7 @@ function CalendarPage({
                   </div>
 
                   {empty ? (
-                    <div className="text-[10.5px] text-[#3f3f4b] pl-1">—</div>
+                    <div className="text-[10.5px] text-[var(--faint)] pl-1">—</div>
                   ) : (
                     <div className="space-y-1">
                       {dayPlans.map((p) => {
@@ -707,10 +707,10 @@ function CalendarPage({
               <span className="w-2 h-2 rounded-sm bg-[var(--violet)]" /> 作业截止
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[#3f6fa8]" /> 课程
+              <span className="w-2 h-2 rounded-sm bg-[var(--accent)]" /> 课程
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[#ff9aa2]" /> 法定休假
+              <span className="w-2 h-2 rounded-sm bg-[var(--danger)]" /> 法定休假
             </div>
             <div className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-sm bg-[var(--border)]" /> 调休补班

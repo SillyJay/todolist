@@ -278,7 +278,7 @@ function FilesPage(): React.JSX.Element {
       </div>
 
       {err && (
-        <div className="shrink-0 mb-2 flex items-start gap-1.5 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] border border-[#3d2a30] text-[11.5px] text-[var(--danger)]">
+        <div className="shrink-0 mb-2 flex items-start gap-1.5 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] border border-[color-mix(in_oklch,var(--danger)_34%,transparent)] text-[11.5px] text-[var(--danger)]">
           <AlertCircle size={12} className="mt-0.5 shrink-0" />
           <span>{err}</span>
         </div>
