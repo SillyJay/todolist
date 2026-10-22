@@ -11,7 +11,10 @@ import {
   refreshStatus,
   aiStatus,
   setAiKey,
-  testAi
+  testAi,
+  workspaceInfo,
+  openWorkspace,
+  type WorkspaceInfo
 } from '../lib/api'
 
 /** 设置页（规格 §7.5）：Phase 1 先做 AI Key / 工作区 / 轮询间隔 / 主题。 */
@@ -19,6 +22,7 @@ function SettingsPage(): React.JSX.Element {
   const [values, setValues] = useState<Record<string, string>>({})
   const [ai, setAi] = useState<{ configured: boolean; model: string | null } | null>(null)
   const [aiMsg, setAiMsg] = useState('')
+  const [ws, setWs] = useState<WorkspaceInfo | null>(null)
   const [apiKey, setApiKey] = useState('')
   const [showKey, setShowKey] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -30,6 +34,7 @@ function SettingsPage(): React.JSX.Element {
         const s = await getSettings()
         setValues(s)
         setAi(await aiStatus())
+        setWs(await workspaceInfo())
       } finally {
         setLoading(false)
       }
@@ -74,6 +79,7 @@ function SettingsPage(): React.JSX.Element {
               await setAiKey(apiKey)
               setApiKey('')
               setAi(await aiStatus())
+        setWs(await workspaceInfo())
               setAiMsg('已保存到系统凭据管理器')
             }}
             disabled={!apiKey}
@@ -98,17 +104,29 @@ function SettingsPage(): React.JSX.Element {
         {aiMsg && <div className="mt-1 text-[11.5px] text-[#7ee2b8]">{aiMsg}</div>}
       </Section>
 
-      <Section title="工作区" desc="开启后作业附件按课程自动归档，程序只增不删。">
+      <Section
+        title="工作区"
+        desc="下载的附件按「平台 / 课程 / 任务」自动分类，重名不覆盖、只增不删。默认跟随助手目录，不占 C 盘。"
+      >
         <div className="flex gap-2">
-          <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[13px]">
-            <FolderOpen size={14} className="text-[#5c5c6a]" />
-            <span className={values.workspace_dir ? 'text-[#e0e0e8]' : 'text-[#5c5c6a]'}>
-              {values.workspace_dir || '未设置（附件将存程序数据目录）'}
+          <div className="flex-1 flex items-center gap-2 px-3 py-2 rounded-md bg-[#1a1a20] border border-[#2e2e38] text-[12px] min-w-0">
+            <FolderOpen size={14} className="text-[#5c5c6a] shrink-0" />
+            <span className="text-[#9a9aa8] truncate" title={ws?.root || ''}>
+              {ws?.root || '加载中…'}
             </span>
           </div>
           <button
+            onClick={() => void openWorkspace()}
+            className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
+          >
+            打开
+          </button>
+          <button
             onClick={() => {
-              const dir = window.prompt('输入工作区目录绝对路径（留空则关闭）', values.workspace_dir || '')
+              const dir = window.prompt(
+                '输入工作区目录绝对路径（留空恢复默认：助手目录/workspace）',
+                values.workspace_dir || ''
+              )
               if (dir !== null) void save({ workspace_dir: dir })
             }}
             className="px-3 py-2 rounded-md bg-[#1c1c22] border border-[#2e2e38] text-[12px] text-[#b0b0be] hover:border-[#4f8cff]"
@@ -116,6 +134,15 @@ function SettingsPage(): React.JSX.Element {
             修改
           </button>
         </div>
+        <button
+          onClick={() => {
+            localStorage.removeItem('ca_guide_done')
+            location.reload()
+          }}
+          className="mt-2 text-[11px] text-[#6b6b7a] hover:text-[#4f8cff]"
+        >
+          重新观看新手引导
+        </button>
       </Section>
 
       <Section title="同步频率" desc="学习通作业轮询间隔（课表不参与轮询）。">

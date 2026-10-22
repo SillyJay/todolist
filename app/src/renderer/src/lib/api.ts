@@ -249,6 +249,17 @@ export const xiaoyaImportCookie = (
     body: JSON.stringify({ cookie })
   })
 
+// ---- 文件 / 工作区（Phase 3）----
+export interface WorkspaceInfo {
+  root: string
+  tree: { platform: string; courses: { name: string; tasks: { name: string; files: { name: string; size: number }[] }[] }[] }[]
+}
+export const workspaceInfo = (): Promise<WorkspaceInfo> => request('/files/workspace')
+export const openWorkspace = (): Promise<{ ok: boolean; root: string }> =>
+  request('/files/open-workspace', { method: 'POST' })
+export const listFiles = (taskId?: number): Promise<{ items: { id: number; name: string; local_path: string; size: number; platform: string }[] }> =>
+  request(`/files${taskId ? `?task_id=${taskId}` : ''}`)
+
 // ---- 微信监听（规格 §5 模块 3）----
 export interface WeChatStatus {
   env: {

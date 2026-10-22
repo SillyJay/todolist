@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import MainLayout from './layouts/MainLayout'
 import LoginDialog from './components/LoginDialog'
+import GuideTour from './components/GuideTour'
 import type { PageKey } from './lib/ui'
 import { getSettings, putSettings } from './lib/api'
 
@@ -37,6 +38,7 @@ function App(): React.JSX.Element {
         onOpenLogin={() => setLoginOpen(true)}
       />
       {loginOpen && <LoginDialog onClose={() => setLoginOpen(false)} />}
+      <GuideTour />
     </>
   )
 }

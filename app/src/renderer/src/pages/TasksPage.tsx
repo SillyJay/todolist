@@ -147,6 +147,7 @@ function TasksPage({ onSelectTask, selectedTaskId }: Props): React.JSX.Element {
         </div>
 
         <button
+          data-guide="import"
           onClick={() => setImportOpen(true)}
           className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] bg-[#1c1c22] border border-[#2e2e38] text-[#b0b0be] hover:border-[#4f8cff] hover:text-[#e8e8ec] transition-colors"
           title="粘贴通知文本，自动解析成任务"

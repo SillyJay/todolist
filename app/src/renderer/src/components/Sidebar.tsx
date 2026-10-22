@@ -24,6 +24,7 @@ function Sidebar({ current, onChange }: Props): React.JSX.Element {
           return (
             <button
               key={item.key}
+              data-guide={item.key}
               onClick={() => onChange(item.key)}
               className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-[13px] transition-colors ${
                 active

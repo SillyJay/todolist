@@ -28,6 +28,7 @@ function TopBar({
 
       <div className="flex items-center gap-1">
         <button
+          data-guide="account"
           onClick={onOpenLogin}
           className="flex items-center gap-1.5 px-2 py-1 rounded-md text-[11.5px] text-[#9a9aa8] hover:text-[#e0e0e8] hover:bg-[#1c1c22]"
         >
