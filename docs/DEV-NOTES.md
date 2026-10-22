@@ -121,3 +121,34 @@ connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://l
 
 主进程监听 `webContents.on('console-message')`，把渲染进程的 console 输出转发到
 `main.log`（前缀 `[renderer]`）。没有 DevTools 的场景下排查前端问题非常有效。
+
+## wechat-cli 安装（微信监听依赖）
+
+**走过的弯路**：
+
+- npm 包 `@canghe_ai/wechat-cli` 只发布了 `darwin-arm64` 单架构二进制，Windows 装完跑不起来。
+- PyPI 上的同名包不是这个项目，别装。
+- `~\.workbuddy\skills\wechat-cli__skillhub` 只是 skill 说明 + 密钥提取脚本，**不含 CLI 本体**。
+
+**可用做法**：从 GitHub 源码装进项目 venv（0.2.4，依赖 click / pycryptodome / zstandard）：
+
+```bash
+git clone https://github.com/huohuoer/wechat-cli.git "$TEMP/wcli"
+"C:/Users/SillyJay/.workbuddy/binaries/python/envs/campus-assistant/Scripts/python.exe" -m pip install "$TEMP/wcli"
+```
+
+装完产物在 venv 里，不在仓库里：
+
+| 位置 | 内容 |
+|---|---|
+| `...\envs\campus-assistant\Scripts\wechat-cli.exe` | console_scripts 入口（`wechat_cli.main:cli`） |
+| `...\envs\campus-assistant\Lib\site-packages\wechat_cli\` | 包本体，约 476K |
+| `%USERPROFILE%\.wechat-cli\` | 运行时数据：`config.json`、`all_keys.json`（数据库密钥）、`last_check.json` |
+
+`server/adapters/wechat_listener.py` 的 `find_cli()` 会依次找：组件安装目录 →
+PATH → 解释器同目录 → 常见安装位置。**第三条命中 venv 的 Scripts 目录**，所以
+`bin/wechat-cli/` 是空目录也能正常工作（该目录由 `component_installer.install_dir()` 建出来，
+仅用于「从 UI 下载组件」这条备用路径）。
+
+⚠️ 源码目录在 `%TEMP%`，会被系统清理。重装前先确认 `wechat-cli --version` 还能跑；
+如果 venv 被重建，上面的 pip 命令要重跑一次（`all_keys.json` 不用重生成）。
