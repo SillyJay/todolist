@@ -2226,3 +2226,58 @@ html[data-theme='light'] .avatar-default {
 .overlay-top {
   z-index: 10001;
 }
+
+.account-forgot {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+
+.account-recovery {
+  margin-top: 4px;
+}
+
+/* 考试标记 */
+.exam-badge {
+  display: inline-block;
+  margin-right: 6px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10.5px;
+  border: 1px solid currentColor;
+  opacity: 0.8;
+  vertical-align: 1px;
+}
+
+/* 头像裁剪 */
+.crop-dialog {
+  width: 320px;
+}
+
+.crop-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.crop-canvas {
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  cursor: grab;
+  touch-action: none;
+  background: #000;
+}
+
+.crop-canvas:active {
+  cursor: grabbing;
+}
+
+.crop-zoom {
+  width: 220px;
+}

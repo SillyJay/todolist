@@ -41,6 +41,14 @@ import {
   openWorkspace,
   wechatUpdateCheck,
   wechatReanalyze,
+  cloudStatus,
+  getSmtpConfig,
+  saveSmtpConfig,
+  testSmtp,
+  emailStatus,
+  cloudConfig,
+  cloudNow,
+  type CloudStatus,
   type WorkspaceInfo
 } from '../lib/api'
 import {
@@ -84,6 +92,13 @@ function SettingsPage(): React.JSX.Element {
   const [loading, setLoading] = useState(false)
   const [saved, setSaved] = useState(false)
   const [aiClassifyMsg, setAiClassifyMsg] = useState('')
+  const [cloud, setCloud] = useState<CloudStatus | null>(null)
+  const [cloudUrl, setCloudUrl] = useState('')
+  const [cloudMsg, setCloudMsg] = useState('')
+  const [updateMsg, setUpdateMsg] = useState('')
+  const [smtp, setSmtp] = useState({ host: '', port: '465', user: '', sender: '', ssl: '1' })
+  const [smtpPass, setSmtpPass] = useState('')
+  const [smtpMsg, setSmtpMsg] = useState('')
   const [autoStart, setAutoStart] = useState<{
     app: boolean
     tunnel: boolean
@@ -113,6 +128,36 @@ function SettingsPage(): React.JSX.Element {
       }
     })()
   }, [])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const cfg = await getSmtpConfig()
+        if (cfg.ok) setSmtp({ host: cfg.host, port: cfg.port, user: cfg.user, sender: cfg.sender, ssl: cfg.ssl })
+      } catch {
+        /* 忽略 */
+      }
+    })()
+  }, [])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const st = await cloudStatus()
+        setCloud(st)
+        setCloudUrl(st.url || '')
+      } catch {
+        /* 忽略 */
+      }
+    })()
+  }, [])
+
+  const saveCloud = async (body: { enabled?: boolean; url?: string }): Promise<void> => {
+    await cloudConfig(body)
+    const st = await cloudStatus()
+    setCloud(st)
+    setCloudMsg(st.ready ? '已开启' : st.message)
+  }
 
   const toggleAutostartAll = async (): Promise<void> => {
     if (!autoStart) return
@@ -438,6 +483,53 @@ function SettingsPage(): React.JSX.Element {
                   </section>
 
                   <section className="settings-section">
+                    <h2>到期提醒</h2>
+                    <p className="desc">
+                      截止前 1 小时提醒一次。可以设置免打扰时段，这段时间内不发通知（夜里不会被吵醒）。
+                    </p>
+                    <div className="body setting-stack">
+                      <div className="setting-row">
+                        <div className="setting-label">免打扰</div>
+                        <div className="setting-hint">
+                          {values.dnd_enabled === '1'
+                            ? `已开启 ${values.dnd_start || '23:00'} – ${values.dnd_end || '07:00'}`
+                            : '未开启'}
+                        </div>
+                        <div className="setting-control">
+                          <button
+                            className="switch"
+                            role="switch"
+                            aria-checked={values.dnd_enabled === '1'}
+                            onClick={() =>
+                              void save({ dnd_enabled: values.dnd_enabled === '1' ? '0' : '1' })
+                            }
+                          />
+                        </div>
+                      </div>
+                      {values.dnd_enabled === '1' && (
+                        <div className="inline-actions">
+                          <label className="setting-hint">开始</label>
+                          <input
+                            className="input"
+                            type="time"
+                            value={values.dnd_start || '23:00'}
+                            onChange={(e) => void save({ dnd_start: e.target.value })}
+                            style={{ maxWidth: 130 }}
+                          />
+                          <label className="setting-hint">结束</label>
+                          <input
+                            className="input"
+                            type="time"
+                            value={values.dnd_end || '07:00'}
+                            onChange={(e) => void save({ dnd_end: e.target.value })}
+                            style={{ maxWidth: 130 }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="settings-section">
                     <h2>新手引导</h2>
                     <p className="desc">
                       第一次使用时的 5 步指引：账号登录 → 学习平台 → AI → 文本导入 → 课表。
@@ -527,6 +619,124 @@ function SettingsPage(): React.JSX.Element {
                           >
                             立即重启生效
                           </button>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="settings-section">
+                    <h2>邮件（找回密码）</h2>
+                    <p className="desc">
+                      配好 SMTP 后，忘记密码可以用邮箱验证码找回。QQ 邮箱：smtp.qq.com / 465 / 授权码。
+                    </p>
+                    <div className="body setting-stack">
+                      <div className="inline-actions">
+                        <input
+                          className="input"
+                          placeholder="SMTP 主机"
+                          value={smtp.host}
+                          onChange={(e) => setSmtp({ ...smtp, host: e.target.value })}
+                          style={{ maxWidth: 200 }}
+                        />
+                        <input
+                          className="input"
+                          placeholder="端口"
+                          value={smtp.port}
+                          onChange={(e) => setSmtp({ ...smtp, port: e.target.value })}
+                          style={{ maxWidth: 90 }}
+                        />
+                      </div>
+                      <div className="inline-actions">
+                        <input
+                          className="input"
+                          placeholder="发件邮箱"
+                          value={smtp.user}
+                          onChange={(e) => setSmtp({ ...smtp, user: e.target.value })}
+                          style={{ maxWidth: 220 }}
+                        />
+                        <input
+                          className="input"
+                          type="password"
+                          placeholder="授权码（留空表示不修改）"
+                          value={smtpPass}
+                          onChange={(e) => setSmtpPass(e.target.value)}
+                          style={{ maxWidth: 220 }}
+                        />
+                      </div>
+                      <div className="inline-actions">
+                        <button
+                          className="btn btn-secondary sm"
+                          onClick={async () => {
+                            const r = await saveSmtpConfig({
+                              host: smtp.host,
+                              port: Number(smtp.port) || 465,
+                              user: smtp.user,
+                              password: smtpPass || undefined,
+                              sender: smtp.sender || smtp.user,
+                              ssl: smtp.ssl === '1'
+                            })
+                            setSmtpMsg(r.ok ? '已保存' : r.message || '保存失败')
+                            setSmtpPass('')
+                          }}
+                        >
+                          保存
+                        </button>
+                        <button
+                          className="btn btn-ghost sm"
+                          onClick={async () => {
+                            setSmtpMsg('测试中…')
+                            const r = await testSmtp()
+                            setSmtpMsg(r.message)
+                          }}
+                        >
+                          发送测试邮件
+                        </button>
+                        <button
+                          className="btn btn-ghost sm"
+                          onClick={async () => {
+                            const st = await emailStatus()
+                            setSmtpMsg(st.configured ? 'SMTP 已配置' : 'SMTP 未配置')
+                          }}
+                        >
+                          检查状态
+                        </button>
+                      </div>
+                      {smtpMsg && (
+                        <div className="status-note">
+                          <span>{smtpMsg}</span>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+
+                  <section className="settings-section">
+                    <h2>版本更新</h2>
+                    <p className="desc">从 GitHub 检查是否有新版本。</p>
+                    <div className="body setting-stack">
+                      <div className="inline-actions">
+                        <button
+                          className="btn btn-secondary sm"
+                          onClick={async () => {
+                            setUpdateMsg('检查中…')
+                            const r = await window.api?.checkUpdate?.()
+                            if (!r || !r.ok) {
+                              setUpdateMsg(r?.message || '检查失败')
+                              return
+                            }
+                            if (r.newer) {
+                              setUpdateMsg(`发现新版本 ${r.latest}（当前 ${r.current}）`)
+                              if (r.url) await window.api?.openExternal?.(r.url)
+                            } else {
+                              setUpdateMsg(`已是最新版本 ${r.current}`)
+                            }
+                          }}
+                        >
+                          检查更新
+                        </button>
+                      </div>
+                      {updateMsg && (
+                        <div className="status-note">
+                          <span>{updateMsg}</span>
                         </div>
                       )}
                     </div>
@@ -740,6 +950,65 @@ function SettingsPage(): React.JSX.Element {
 
               {tab === 'sync' && (
                 <>
+                <section className="settings-section">
+                  <h2>云端同步</h2>
+                  <p className="desc">
+                    把本机采集到的任务推到服务器，手机端和别的设备就能看到；手机建的日程也会同步回来。
+                  </p>
+                  <div className="body setting-stack">
+                    <div className="setting-row">
+                      <div className="setting-label">开启同步</div>
+                      <div className="setting-hint">
+                        {!cloud ? '检测中…' : cloud.enabled ? (cloud.ready ? '已开启' : cloud.message) : '未开启'}
+                      </div>
+                      <div className="setting-control">
+                        <button
+                          className="switch"
+                          role="switch"
+                          aria-checked={!!cloud?.enabled}
+                          disabled={!cloud}
+                          onClick={() => void saveCloud({ enabled: !cloud?.enabled })}
+                        />
+                      </div>
+                    </div>
+                    <div className="inline-actions">
+                      <input
+                        className="input"
+                        placeholder="服务器地址，如 https://todo.example.com"
+                        value={cloudUrl}
+                        onChange={(e) => setCloudUrl(e.target.value)}
+                        style={{ maxWidth: 320 }}
+                      />
+                      <button className="btn btn-secondary sm" onClick={() => void saveCloud({ url: cloudUrl })}>
+                        保存地址
+                      </button>
+                      <button
+                        className="btn btn-ghost sm"
+                        onClick={async () => {
+                          setCloudMsg('同步中…')
+                          try {
+                            const r = await cloudNow()
+                            setCloudMsg(
+                              r.ok
+                                ? `已推送 ${r.push?.pushed ?? 0} 条，拉回 ${r.pull?.pulled ?? 0} 条`
+                                : r.push?.message || '同步失败'
+                            )
+                          } catch (e) {
+                            setCloudMsg(String(e).replace(/^Error:\s*/, ''))
+                          }
+                        }}
+                      >
+                        立即同步
+                      </button>
+                    </div>
+                    {cloudMsg && (
+                      <div className="status-note">
+                        <span>{cloudMsg}</span>
+                      </div>
+                    )}
+                  </div>
+                </section>
+
                 <section className="settings-section">
                   <h2>同步频率</h2>
                   <p className="desc">学习通作业轮询间隔（课表不参与轮询）。间隔越短越及时，但请求更频繁。</p>

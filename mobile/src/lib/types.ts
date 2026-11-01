@@ -50,4 +50,6 @@ export interface Msg {
   simplified: boolean
   /** high / medium / low */
   importance?: string
+  /** AI/规则的判定依据 */
+  reason?: string
 }

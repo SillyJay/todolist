@@ -167,6 +167,7 @@ def chaoxing_sync_notices(db: Session = Depends(get_db)):
             Task(
                 space_id=get_or_create_space().id,
                 platform="chaoxing",
+                kind=it.get("kind") or ("exam" if key.startswith("exam:") else "notice"),
                 title=it["title"],
                 ddl=it.get("ddl"),
                 status="pending",

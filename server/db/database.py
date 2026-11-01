@@ -15,6 +15,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expi
 def init_db() -> None:
     Base.metadata.create_all(engine)
     _migrate()
+    _ensure_indexes()
 
 
 def _migrate() -> None:
@@ -35,6 +36,7 @@ def _migrate() -> None:
         "tasks": [
             ("in_semester", "INTEGER DEFAULT 1"),
             ("semester", "TEXT"),
+            ("kind", "TEXT"),
             ("space_id", "TEXT"),
             ("deleted_at", "TEXT"),
         ],
@@ -83,3 +85,22 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _ensure_indexes() -> None:
+    """常用查询的复合索引（SQLite 里 CREATE INDEX 幂等）。"""
+    from sqlalchemy import text
+
+    stmts = [
+        "CREATE INDEX IF NOT EXISTS ix_tasks_space_status ON tasks(space_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_tasks_space_ddl ON tasks(space_id, ddl)",
+        "CREATE INDEX IF NOT EXISTS ix_msg_space_updated ON wechat_messages(space_id, updated_at)",
+        "CREATE INDEX IF NOT EXISTS ix_msg_space_digest ON wechat_messages(space_id, digest_src)",
+        "CREATE INDEX IF NOT EXISTS ix_events_space_date ON events(space_id, date)",
+    ]
+    with engine.begin() as conn:
+        for stmt in stmts:
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass

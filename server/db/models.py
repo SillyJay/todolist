@@ -14,6 +14,7 @@ class Task(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     platform = Column(Text, nullable=False)        # chaoxing / xiaoya / wechat / manual
+    kind = Column(Text, index=True)                # exam / homework / notice / task
     course_name = Column(Text)                     # 原始课程名
     course_abbr = Column(Text)                     # 简化课程名
     title = Column(Text, nullable=False)
@@ -248,4 +249,18 @@ class InviteCode(Base):
     expires_at = Column(Text)
     used_at = Column(Text)
     used_by_email = Column(Text)
+    created_at = Column(Text)
+
+
+class EmailCode(Base):
+    """邮箱验证码：找回密码用（10 分钟有效，一次性）。"""
+
+    __tablename__ = "email_codes"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    email = Column(Text, index=True)
+    code = Column(Text)
+    purpose = Column(Text, default="reset")
+    expires_at = Column(Text)
+    used_at = Column(Text)
     created_at = Column(Text)

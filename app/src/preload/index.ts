@@ -12,6 +12,17 @@ const api = {
   getLanIp: (): Promise<string> => ipcRenderer.invoke('app:getLanIp'),
   /** 应用版本号（设置页「常规」里显示） */
   getVersion: (): Promise<string> => ipcRenderer.invoke('app:getVersion'),
+  /** 检查 GitHub 最新版本 */
+  checkUpdate: (): Promise<{
+    ok: boolean
+    current?: string
+    latest?: string
+    url?: string
+    newer?: boolean
+    message?: string
+  }> => ipcRenderer.invoke('app:checkUpdate'),
+  openExternal: (url: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('app:openExternal', url),
   /** 开机自启状态：app=桌面端，tunnel=访问隧道 */
   getAutostart: (): Promise<{ app: boolean; tunnel: boolean; tunnelAvailable: boolean }> =>
     ipcRenderer.invoke('app:getAutostart'),

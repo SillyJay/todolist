@@ -9,7 +9,7 @@ import SettingsPage, { type ThemeMode } from './pages/SettingsPage'
 import LoginScreen from './pages/LoginScreen'
 import type { Course, Ev, Msg, Task } from './lib/types'
 
-const APP_VERSION = '0.3.0'
+const APP_VERSION = '0.3.2'
 import {
   applyOps,
   fetchChanges,
@@ -557,6 +557,7 @@ export default function App(): React.JSX.Element {
           courses={courses}
           semesterStart={semesterStart}
           onToggle={toggleTask}
+          onRefresh={() => void sync()}
         />
       )}
       {tab === 'msg' && (

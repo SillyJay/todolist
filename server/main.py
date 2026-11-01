@@ -117,11 +117,53 @@ def _digest_backfill() -> None:
     threading.Thread(target=run, daemon=True, name="digest-backfill").start()
 
 
+def _retention_cleanup() -> None:
+    """启动时清一次超期消息，并起每日后台任务。"""
+    import threading
+
+    def run() -> None:
+        try:
+            from db.database import SessionLocal
+            from services.retention import purge_old_messages, start_retention_job
+
+            db = SessionLocal()
+            try:
+                stat = purge_old_messages(db)
+                if stat["deleted"]:
+                    print(f"[retention] 清理 {stat['deleted']} 条超过 {stat['days']} 天的消息")
+            finally:
+                db.close()
+            start_retention_job()
+        except Exception as e:  # noqa: BLE001
+            print(f"[retention] 清理失败：{e}")
+
+    threading.Thread(target=run, daemon=True, name="retention-boot").start()
+
+
+def _start_cloud() -> None:
+    """开启云端同步时，跑后台推送/拉取循环。"""
+    try:
+        from db.database import SessionLocal
+        from db.models import Setting
+        from services.cloud_sync import start_cloud_loop
+
+        db = SessionLocal()
+        row = db.get(Setting, "cloud_enabled")
+        enabled = (row.value if row else "0") == "1"
+        db.close()
+        if enabled:
+            start_cloud_loop()
+    except Exception as e:  # noqa: BLE001
+        print(f"[cloud] 启动失败：{e}")
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
     _maybe_reclassify()
     _digest_backfill()
+    _retention_cleanup()
+    _start_cloud()
     start_scheduler()
     yield
     stop_scheduler()
@@ -171,7 +213,7 @@ app.include_router(plans.router, prefix="/api/plans", tags=["plans"])
 app.include_router(settings.router, prefix="/api/settings", tags=["settings"])
 app.include_router(wechat_feed.router, prefix="/api/wechat", tags=["wechat-feed"])
 app.include_router(system.router, prefix="/api/system", tags=["system"])
-app.include_router(pair.router, prefix="/api/pair", tags=["pair"])
+# 配对码流程已由邮箱账号取代
 app.include_router(sync.router, prefix="/api/sync", tags=["sync"])
 
 # ---------------------------------------------------------------- 移动端静态站点

@@ -36,7 +36,7 @@ export function urgencyOf(ddl?: string | null): 'danger' | 'warn' | 'near' | 'no
 }
 
 export function formatDdl(ddl?: string | null): string {
-  if (!ddl) return '无截止时间'
+  if (!ddl) return '未设置截止'
   const d = new Date(ddl)
   if (Number.isNaN(d.getTime())) return ddl
   const now = Date.now()

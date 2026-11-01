@@ -62,7 +62,7 @@ def _serialize(t: Task) -> dict:
         # 展示用：碎片标题补课程名（大学物理BⅠ · 第六章）
         "display_title": display_title(t.title, t.course_abbr or t.course_name),
         # chapter = 纯章节类，桌面端也可以折叠归档
-        "kind": task_kind(t.title),
+        "kind": "exam" if (t.kind or "") == "exam" else task_kind(t.title),
         "ddl": t.ddl,
         "status": t.status,
         "url": t.url,
@@ -79,6 +79,7 @@ def _serialize(t: Task) -> dict:
 
 @router.get("")
 def list_tasks(
+    kind: str | None = None,
     space: Space = Depends(current_space),
     status: str | None = None,
     platform: str | None = None,
@@ -90,6 +91,8 @@ def list_tasks(
 ):
     """任务列表。from/to 为 ISO 日期，按 ddl 过滤。"""
     q = db.query(Task).filter(Task.space_id == space.id)
+    if kind:
+        q = q.filter(Task.kind == kind)
     if status:
         q = q.filter(Task.status == status)
     if platform:

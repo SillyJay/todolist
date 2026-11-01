@@ -3,6 +3,15 @@ import { ElectronAPI } from '@electron-toolkit/preload'
 interface Api {
   /** 本机密钥 */
   getAdminToken: () => Promise<string>
+  checkUpdate: () => Promise<{
+    ok: boolean
+    current?: string
+    latest?: string
+    url?: string
+    newer?: boolean
+    message?: string
+  }>
+  openExternal: (url: string) => Promise<{ ok: boolean }>
   getAutostart: () => Promise<{ app: boolean; tunnel: boolean; tunnelAvailable: boolean }>
   setAutostart: (kind: 'app' | 'tunnel', enabled: boolean) => Promise<{ ok: boolean; message?: string }>
   openAutostartFolder: () => Promise<{ ok: boolean }>

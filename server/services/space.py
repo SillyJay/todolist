@@ -44,11 +44,17 @@ def _hash(value: str) -> str:
 # ---------------------------------------------------------------- space
 
 def get_or_create_space() -> Space:
-    """取当前 space；没有就建一个（并生成恢复码）。"""
+    """本机当前空间：优先用 local_space_id（登录账号后绑定），否则用默认空间。"""
     from db.models import Setting
 
     db = SessionLocal()
     try:
+        bound = db.get(Setting, "local_space_id")
+        if bound and bound.value:
+            space = db.get(Space, bound.value)
+            if space:
+                return _detach(db, space)
+
         row = db.get(Setting, DEFAULT_SPACE_KEY)
         space = db.get(Space, row.value) if row and row.value else None
         if space and not space.recovery_hash:
@@ -304,6 +310,7 @@ def create_invite(note: str = "", ttl_days: int = 7) -> "InviteCode":
     from datetime import datetime, timedelta
 
     from db.database import SessionLocal
+    from db.models import Setting
     from db.models import InviteCode
 
     db = SessionLocal()
@@ -392,5 +399,54 @@ def register_with_invite(
         db.refresh(user)
         db.expunge(user)
         return user, ""
+    finally:
+        db.close()
+
+
+def reset_password_with_recovery(
+    email: str, recovery: str, new_password: str
+) -> tuple[bool, str, str]:
+    """邮箱 + 恢复码 → 重设密码。返回 (成功, 原因, space_id)。"""
+    email = (email or "").strip().lower()
+    if len(new_password or "") < 6:
+        return False, "新密码至少 6 位", ""
+
+    from db.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == email).first()
+        if not user:
+            return False, "邮箱或恢复码不对", ""
+
+        space = db.get(Space, user.space_id)
+        if not space or not space.recovery_hash:
+            return False, "这个账号没有设置恢复码", ""
+
+        if _hash(normalize_recovery(recovery)) != space.recovery_hash:
+            return False, "邮箱或恢复码不对", ""
+
+        user.password_hash = hash_password(new_password)
+        # 用过的恢复码立即作废，并生成新码（调用方展示一次）
+        space.recovery_hash = _hash(gen_recovery_code())
+        db.commit()
+        return True, "", user.space_id
+    finally:
+        db.close()
+
+
+def new_recovery_for_space(space_id: str) -> str:
+    """给指定空间换一个新恢复码，返回明文（只展示一次）。"""
+    from db.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        space = db.get(Space, space_id)
+        if not space:
+            return ""
+        code = gen_recovery_code()
+        space.recovery_hash = _hash(normalize_recovery(code))
+        db.commit()
+        return code
     finally:
         db.close()

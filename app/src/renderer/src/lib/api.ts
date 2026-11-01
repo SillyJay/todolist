@@ -75,7 +75,7 @@ export interface Task {
   /** 服务端补全过的标题（碎片会带课程名），没有时用 title */
   display_title?: string | null
   /** chapter = 纯章节类，折叠在「课内章节」里 */
-  kind?: 'chapter' | 'task'
+  kind?: 'chapter' | 'task' | 'exam'
   ddl?: string | null
   status: 'pending' | 'done' | 'expired' | 'ignored'
   url?: string | null
@@ -998,3 +998,90 @@ export const authPutProfile = (body: {
 
 export const authLogout = (): Promise<{ ok: boolean }> =>
   authRequest('/auth/logout', { method: 'POST' })
+
+export const authRecoveryLogin = (
+  email: string,
+  recovery: string,
+  newPassword: string
+): Promise<{
+  ok: boolean
+  token?: string
+  email?: string
+  space_id?: string
+  new_recovery?: string
+  message?: string
+}> =>
+  authRequest('/auth/recovery', {
+    method: 'POST',
+    body: JSON.stringify({ email, recovery, new_password: newPassword })
+  })
+
+export const authRecoveryStatus = (): Promise<{ ok: boolean; recovery_set?: boolean }> =>
+  authRequest('/auth/recovery/status')
+
+export const authRecoveryRotate = (): Promise<{ ok: boolean; recovery?: string; message?: string }> =>
+  authRequest('/auth/recovery/rotate', { method: 'POST' })
+
+/* ---------------- 云端同步 ---------------- */
+
+export const authBindLocal = (): Promise<{ ok: boolean; space_id?: string; moved_rows?: number; message?: string }> =>
+  authRequest('/auth/bind-local', { method: 'POST' })
+
+export interface CloudStatus {
+  ok: boolean
+  enabled: boolean
+  url: string
+  ready: boolean
+  message: string
+  has_token: boolean
+  push_cursor: string
+  pull_cursor: string
+}
+
+export const cloudStatus = (): Promise<CloudStatus> => request('/sync/cloud/status')
+
+export const cloudConfig = (body: { enabled?: boolean; url?: string }): Promise<{ ok: boolean }> =>
+  request('/sync/cloud/config', { method: 'POST', body: JSON.stringify(body) })
+
+export const cloudNow = (): Promise<{ ok: boolean; push?: { pushed?: number; message?: string }; pull?: { pulled?: number } }> =>
+  request('/sync/cloud/now', { method: 'POST' }, 40000)
+
+/* ---------------- SMTP / 邮箱验证码 ---------------- */
+
+export const emailStatus = (): Promise<{ ok: boolean; configured: boolean }> =>
+  request('/auth/email/status')
+
+export const emailSendCode = (email: string): Promise<{ ok: boolean; message?: string }> =>
+  request('/auth/email/send-code', { method: 'POST', body: JSON.stringify({ email }) }, 30000)
+
+export const resetByCode = (
+  email: string,
+  code: string,
+  newPassword: string
+): Promise<{ ok: boolean; token?: string; email?: string; new_recovery?: string; message?: string }> =>
+  request('/auth/reset-by-code', {
+    method: 'POST',
+    body: JSON.stringify({ email, code, new_password: newPassword })
+  }, 30000)
+
+export const getSmtpConfig = (): Promise<{
+  ok: boolean
+  host: string
+  port: string
+  user: string
+  sender: string
+  ssl: string
+}> => request('/auth/email/config')
+
+export const saveSmtpConfig = (body: {
+  host: string
+  port: number
+  user: string
+  password?: string
+  sender?: string
+  ssl?: boolean
+}): Promise<{ ok: boolean; message?: string }> =>
+  request('/auth/email/config', { method: 'POST', body: JSON.stringify(body) })
+
+export const testSmtp = (): Promise<{ ok: boolean; message: string }> =>
+  request('/auth/email/test', { method: 'POST' }, 30000)

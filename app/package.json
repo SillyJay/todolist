@@ -1,6 +1,6 @@
 {
   "name": "campus-assistant",
-  "version": "0.9.9",
+  "version": "0.9.9-hotfix",
   "description": "ToDoList - personal tasks, schedules and message digest",
   "main": "./out/main/index.js",
   "author": "SillyJay",

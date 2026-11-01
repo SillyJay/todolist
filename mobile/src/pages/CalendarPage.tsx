@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Course, Ev, Task } from '../lib/types'
 import { addDays, monthLabel, parseYmd, sameDay, WEEK_CN, ymd } from '../lib/date'
 import { IconCheck, IconChevronDown, IconMore } from '../components/Icons'
+import { deleteEvent, updateEvent } from '../lib/api'
 
 interface Props {
   tasks: Task[]
@@ -10,6 +11,8 @@ interface Props {
   /** 学期第一周的周一（YYYY-MM-DD），用于把日期换算成周次 */
   semesterStart?: string
   onToggle: (id: string) => void
+  /** 编辑日程后触发重新同步 */
+  onRefresh?: () => void
 }
 
 /** 生成 6 周 × 7 天的网格（含上下月补位） */
@@ -55,9 +58,12 @@ export default function CalendarPage({
   events: allEvents,
   courses: allCourses,
   semesterStart,
-  onToggle
+  onToggle,
+  onRefresh
 }: Props): React.JSX.Element {
   const today = useMemo(() => new Date(), [])
+  const [editing, setEditing] = useState<Ev | null>(null)
+  const [saving, setSaving] = useState(false)
   const [selected, setSelected] = useState<Date>(today)
   const [anchor, setAnchor] = useState<Date>(new Date(today.getFullYear(), today.getMonth(), 1))
   const [collapsed, setCollapsed] = useState(false)
@@ -120,7 +126,8 @@ export default function CalendarPage({
       title: e.title,
       start: e.start,
       end: e.end,
-      location: e.location
+      location: e.location,
+      ev: e
     }))
   ].sort((a, b) => a.start.localeCompare(b.start))
 
@@ -209,7 +216,13 @@ export default function CalendarPage({
         {!has && <div className="empty">这一天没有任务</div>}
 
         {timeline.map((s) => (
-          <div key={s.id} className={`slot${s.kind === 'event' ? ' orange' : ''}`}>
+          <div
+            key={s.id}
+            className={`slot${s.kind === 'event' ? ' orange' : ''}`}
+            onClick={() => {
+              if (s.kind === 'event' && s.ev) setEditing(s.ev)
+            }}
+          >
             <div className="slot-time">{s.start}</div>
             <div className="slot-body">
               <div className="slot-title">{s.title}</div>
@@ -231,6 +244,93 @@ export default function CalendarPage({
           </div>
         ))}
       </div>
+
+      {editing && (
+        <div className="sheet-mask" onClick={() => setEditing(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
+              <span>编辑日程</span>
+              <button className="sheet-close" onClick={() => setEditing(null)} aria-label="关闭">
+                ×
+              </button>
+            </div>
+            <div className="sheet-body">
+              <label className="sheet-label">标题</label>
+              <input
+                className="sheet-input"
+                value={editing.title}
+                onChange={(e) => setEditing({ ...editing, title: e.target.value })}
+              />
+              <label className="sheet-label">日期</label>
+              <input
+                className="sheet-input"
+                type="date"
+                value={editing.date}
+                onChange={(e) => setEditing({ ...editing, date: e.target.value })}
+              />
+              <div className="sheet-row">
+                <div style={{ flex: 1 }}>
+                  <label className="sheet-label">开始</label>
+                  <input
+                    className="sheet-input"
+                    type="time"
+                    value={editing.start}
+                    onChange={(e) => setEditing({ ...editing, start: e.target.value })}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label className="sheet-label">结束</label>
+                  <input
+                    className="sheet-input"
+                    type="time"
+                    value={editing.end}
+                    onChange={(e) => setEditing({ ...editing, end: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div className="sheet-row" style={{ marginTop: 14 }}>
+                <button
+                  className="sheet-btn danger"
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true)
+                    try {
+                      await deleteEvent(editing.id)
+                      setEditing(null)
+                      onRefresh?.()
+                    } finally {
+                      setSaving(false)
+                    }
+                  }}
+                >
+                  删除
+                </button>
+                <button
+                  className="sheet-btn primary"
+                  disabled={saving}
+                  onClick={async () => {
+                    setSaving(true)
+                    try {
+                      await updateEvent(editing.id, {
+                        title: editing.title,
+                        date: editing.date,
+                        start: editing.start,
+                        end: editing.end
+                      })
+                      setEditing(null)
+                      onRefresh?.()
+                    } finally {
+                      setSaving(false)
+                    }
+                  }}
+                >
+                  保存
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

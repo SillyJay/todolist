@@ -10,6 +10,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db.database import get_db
+from routers.pair import current_space
+from db.models import Space
 from db.models import File, Setting, Task
 from services.workspace import save_bytes, safe_path, tree, workspace_root
 
@@ -63,8 +65,12 @@ class PathBody(BaseModel):
 
 
 @router.get("")
-def list_files(task_id: int | None = None, db: Session = Depends(get_db)):
-    q = db.query(File)
+def list_files(
+    task_id: int | None = None,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
+    q = db.query(File).filter(File.space_id == space.id)
     if task_id:
         q = q.filter(File.task_id == task_id)
     rows = q.all()

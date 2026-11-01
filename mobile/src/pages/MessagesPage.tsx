@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Msg } from '../lib/types'
+import { reclassifyMessage } from '../lib/api'
 import { IconChevronDown, IconMore, IconSearch } from '../components/Icons'
 
 // 分类：key 用来过滤（后端返回的是英文 key），label 用来显示
@@ -43,6 +44,8 @@ interface Props {
 }
 
 export default function MessagesPage({ messages, pending = 0, onIgnore, onToTask }: Props): React.JSX.Element {
+  const [detail, setDetail] = useState<Msg | null>(null)
+  const [saving, setSaving] = useState(false)
   const [cat, setCat] = useState('all')
   const [picked, setPicked] = useState<Msg | null>(null)
   const [filterOpen, setFilterOpen] = useState(false)
@@ -168,6 +171,53 @@ export default function MessagesPage({ messages, pending = 0, onIgnore, onToTask
             </div>
           </div>
         </>
+      )}
+
+      {detail && (
+        <div className="sheet-mask" onClick={() => setDetail(null)}>
+          <div className="sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="sheet-head">
+              <span>消息详情</span>
+              <button className="sheet-close" onClick={() => setDetail(null)} aria-label="关闭">
+                ×
+              </button>
+            </div>
+            <div className="sheet-body">
+              <div className="sheet-meta">{detail.group || '未知群'} · {detail.at}</div>
+              <div className="sheet-text">{detail.text}</div>
+              {detail.reason && <div className="sheet-reason">判定依据：{detail.reason}</div>}
+              <div className="sheet-label">分类不对？点一个正确的：</div>
+              <div className="cat-grid">
+                {[
+                  ['homework', '作业考试'],
+                  ['admin', '通知安排'],
+                  ['competition', '比赛竞赛'],
+                  ['lecture', '讲座活动'],
+                  ['recruit', '招募招新'],
+                  ['chitchat', '闲聊'],
+                  ['misc', '其他']
+                ].map(([k, label]) => (
+                  <button
+                    key={k}
+                    className={`cat-chip${detail.category === k ? ' active' : ''}`}
+                    disabled={saving}
+                    onClick={async () => {
+                      setSaving(true)
+                      try {
+                        await reclassifyMessage(Number(detail.id), k)
+                        setDetail(null)
+                      } finally {
+                        setSaving(false)
+                      }
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

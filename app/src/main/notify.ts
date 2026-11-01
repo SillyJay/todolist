@@ -20,11 +20,43 @@ interface DueTask {
   status: string
 }
 
+
+/** 当前是否处于免打扰时段（跨零点也支持） */
+function inDnd(start: string, end: string): boolean {
+  const now = new Date()
+  const mins = now.getHours() * 60 + now.getMinutes()
+  const parse = (v: string): number => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(v || '')
+    if (!m) return -1
+    return Math.min(23, Number(m[1])) * 60 + Math.min(59, Number(m[2]))
+  }
+  const s = parse(start)
+  const e = parse(end)
+  if (s < 0 || e < 0 || s === e) return false
+  return s < e ? mins >= s && mins < e : mins >= s || mins < e
+}
+
+async function dndActive(baseUrl: () => string): Promise<boolean> {
+  try {
+    const res = await fetch(`${baseUrl()}/settings`)
+    if (!res.ok) return false
+    const data = (await res.json()) as Record<string, string>
+    if (data.dnd_enabled !== '1') return false
+    return inDnd(data.dnd_start || '23:00', data.dnd_end || '07:00')
+  } catch {
+    return false
+  }
+}
+
 async function checkDue(window: BrowserWindow | null, baseUrl: () => string): Promise<void> {
   try {
     const res = await fetch(`${baseUrl()}/tasks?status=pending`)
     if (!res.ok) return
     const data = (await res.json()) as { items: DueTask[] }
+    if (await dndActive(baseUrl)) {
+      log('[notify] 免打扰时段，本次不提醒')
+      return
+    }
     const now = Date.now()
 
     for (const t of data.items) {

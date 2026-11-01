@@ -413,6 +413,35 @@ function makeShortcut(lnkPath: string, target: string, args: string, wd: string)
     return { ok: true }
   })
 
+
+  ipcMain.handle('app:checkUpdate', async () => {
+    try {
+      const res = await fetch('https://api.github.com/repos/SillyJay/todolist/releases/latest', {
+        headers: { 'User-Agent': 'ToDoList' }
+      })
+      if (!res.ok) return { ok: false, message: `检查失败（HTTP ${res.status}）` }
+      const data = (await res.json()) as { tag_name?: string; html_url?: string; prerelease?: boolean }
+      const latest = String(data.tag_name || '').replace(/^v/, '')
+      const current = app.getVersion()
+      const newer = latest && latest !== current && latest > current
+      return {
+        ok: true,
+        current,
+        latest,
+        url: data.html_url || '',
+        newer: Boolean(newer)
+      }
+    } catch (e) {
+      return { ok: false, message: String(e) }
+    }
+  })
+
+  ipcMain.handle('app:openExternal', async (_e, url: string) => {
+    if (!/^https:\/\//.test(url || '')) return { ok: false }
+    await shell.openExternal(url)
+    return { ok: true }
+  })
+
   ipcMain.handle('app:getVersion', () => app.getVersion())
   // 渲染进程取本机密钥（隧道场景下用它证明「我是桌面端」）
   ipcMain.handle('app:getAdminToken', () => getAdminToken())

@@ -402,3 +402,101 @@ def upcoming(space: Space = Depends(current_space), db: Session = Depends(get_db
         .all()
     )
     return {"items": [_event_row(e) for e in rows]}
+
+
+# ---------------------------------------------------------------- 云端同步
+
+class CloudConfig(BaseModel):
+    enabled: bool | None = None
+    url: str | None = None
+
+
+@router.get("/cloud/status")
+def cloud_status(space: Space = Depends(current_space), db: Session = Depends(get_db)):
+    from services import cloud_sync
+    from services.secrets import get_secret
+    from db.models import Setting
+
+    ok, url, why = cloud_sync.configured(db)
+    return {
+        "ok": True,
+        "enabled": (db.get(Setting, "cloud_enabled").value if db.get(Setting, "cloud_enabled") else "0") == "1",
+        "url": url or (db.get(Setting, "cloud_url").value if db.get(Setting, "cloud_url") else ""),
+        "ready": ok,
+        "message": why,
+        "has_token": bool((get_secret("cloud_token") or "").strip()),
+        "push_cursor": (db.get(Setting, "cloud_cursor_push").value if db.get(Setting, "cloud_cursor_push") else ""),
+        "pull_cursor": (db.get(Setting, "cloud_cursor_pull").value if db.get(Setting, "cloud_cursor_pull") else ""),
+    }
+
+
+@router.post("/cloud/config")
+def cloud_config(
+    body: CloudConfig, space: Space = Depends(current_space), db: Session = Depends(get_db)
+):
+    from db.models import Setting
+
+    def put(key: str, value: str) -> None:
+        row = db.get(Setting, key)
+        if row:
+            row.value = value
+        else:
+            db.add(Setting(key=key, value=value))
+
+    if body.enabled is not None:
+        put("cloud_enabled", "1" if body.enabled else "0")
+    if body.url is not None:
+        put("cloud_url", body.url.strip())
+    db.commit()
+    return {"ok": True}
+
+
+@router.post("/cloud/now")
+def cloud_now(space: Space = Depends(current_space), db: Session = Depends(get_db)):
+    from services import cloud_sync
+
+    return cloud_sync.sync_once(db)
+
+
+class EventPatch(BaseModel):
+    title: str | None = None
+    date: str | None = None
+    start: str | None = None
+    end: str | None = None
+    location: str | None = None
+    note: str | None = None
+    remind_before: int | None = None
+
+
+@router.patch("/events/{event_id}")
+def update_event(
+    event_id: str,
+    body: EventPatch,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
+    """手机端编辑日程：只改传入的字段。"""
+    row = db.get(Event, event_id)
+    if not row or row.space_id != space.id:
+        return {"ok": False, "message": "日程不存在"}
+
+    for key, value in body.model_dump(exclude_none=True).items():
+        setattr(row, key, value)
+    row.updated_at = _now()
+    db.commit()
+    return {"ok": True, "event": _event_row(row)}
+
+
+@router.delete("/events/{event_id}")
+def delete_event(
+    event_id: str,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
+    row = db.get(Event, event_id)
+    if not row or row.space_id != space.id:
+        return {"ok": False, "message": "日程不存在"}
+    row.deleted_at = _now()
+    row.updated_at = _now()
+    db.commit()
+    return {"ok": True}

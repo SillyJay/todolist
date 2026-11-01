@@ -141,18 +141,6 @@ export default function SettingsPage({
           />
         </div>
 
-        <div className="group">
-          <div className="group-head">
-            <div className="avatar">{account?.avatar ? <img src={account.avatar} alt="" /> : <span className="avatar-default"><IconUser /></span>}</div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 17, fontWeight: 550 }}>{account?.email || "未绑定账号"}</div>
-              <div style={{ fontSize: 13, color: 'var(--fg-2)', marginTop: 2 }}>
-                {account?.email ? "已登录 · 换手机用同一邮箱登录" : "绑定后可在换手机时找回数据"}
-              </div>
-            </div>
-            <IconChevron className="chev-r" />
-          </div>
-        </div>
 
         <div className="group">
           <div className="group-rows">

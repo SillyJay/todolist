@@ -33,12 +33,13 @@ interface Props {
   platforms?: string[]
 }
 
-type Filter = 'pending' | 'done' | 'all'
+type Filter = 'pending' | 'done' | 'all' | 'exam'
 
 const FILTERS: [Filter, string][] = [
   ['pending', '待办'],
   ['done', '已完成'],
-  ['all', '全部']
+  ['all', '全部'],
+  ['exam', '考试']
 ]
 
 const tasksViewKey = (filter: Filter, semester: boolean): string =>
@@ -78,7 +79,11 @@ function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JS
     const req = ++reqRef.current
     try {
       const params: Record<string, string> = {}
-      if (filter !== 'all') params.status = filter
+      if (filter === 'exam') {
+        params.kind = 'exam'
+      } else if (filter !== 'all') {
+        params.status = filter
+      }
       if (semesterOnly) params.semester = 'current'
       const res = await listTasks(params)
       if (req !== reqRef.current) return
@@ -443,6 +448,7 @@ function TaskRow({
         </div>
 
         <div className={`task-title${done || leaving ? ' done' : ''}`}>
+                {task.kind === "exam" && <span className="exam-badge">考试</span>}
           {aiOn && task.summary ? task.summary : task.display_title || task.title}
         </div>
 

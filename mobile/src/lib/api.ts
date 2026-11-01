@@ -291,3 +291,21 @@ export const getProfile = (): Promise<Profile> => request('/api/auth/profile')
 
 export const putProfile = (body: { display_name?: string; avatar?: string }): Promise<Profile> =>
   request('/api/auth/profile', { method: 'PUT', body: JSON.stringify(body) })
+
+export const reclassifyMessage = (
+  id: number,
+  category: string
+): Promise<{ ok: boolean; category?: string; label?: string }> =>
+  request(`/api/wechat/feed/${id}/reclassify`, {
+    method: 'POST',
+    body: JSON.stringify({ category })
+  })
+
+export const updateEvent = (
+  id: string,
+  patch: { title?: string; date?: string; start?: string; end?: string; location?: string }
+): Promise<{ ok: boolean; event?: unknown }> =>
+  request(`/api/sync/events/${id}`, { method: 'PATCH', body: JSON.stringify(patch) })
+
+export const deleteEvent = (id: string): Promise<{ ok: boolean }> =>
+  request(`/api/sync/events/${id}`, { method: 'DELETE' })
