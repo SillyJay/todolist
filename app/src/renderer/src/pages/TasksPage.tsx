@@ -1,9 +1,22 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Plus, CalendarPlus, Check, Trash2, ExternalLink, Loader2, ListPlus } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  AlertCircle,
+  CalendarPlus,
+  Check,
+  ChevronDown,
+  ExternalLink,
+  Inbox,
+  ListPlus,
+  Loader2,
+  Plus,
+  Trash2
+} from 'lucide-react'
 import ImportTaskDialog from '../components/ImportTaskDialog'
+import AddTaskDialog from '../components/AddTaskDialog'
+import { toast } from '../components/Toast'
 import {
   listTasks,
-  createTask,
   updateTask,
   deleteTask,
   exportCalendar,
@@ -11,6 +24,7 @@ import {
   type Task
 } from '../lib/api'
 import { formatDdl, urgencyOf, PLATFORM_LABEL } from '../lib/ui'
+import { readViewCache, writeViewCache } from '../lib/viewCache'
 
 interface Props {
   onSelectTask: (t: Task | null) => void
@@ -21,42 +35,93 @@ interface Props {
 
 type Filter = 'pending' | 'done' | 'all'
 
+const FILTERS: [Filter, string][] = [
+  ['pending', '待办'],
+  ['done', '已完成'],
+  ['all', '全部']
+]
+
+const tasksViewKey = (filter: Filter, semester: boolean): string =>
+  `tasks:${filter}:${semester ? 'cur' : 'all'}`
+
 function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JSX.Element {
-  const [tasks, setTasks] = useState<Task[]>([])
+  // 回到任务页时先复用上次的快照，避免「空态 → 列表」的整块闪动
+  const [tasks, setTasks] = useState<Task[]>(
+    () => readViewCache<Task[]>(tasksViewKey('pending', true)) ?? []
+  )
   const [filter, setFilter] = useState<Filter>('pending')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(
+    () => readViewCache<Task[]>(tasksViewKey('pending', true)) === undefined
+  )
+  // 有旧内容在屏上时的静默刷新：只显示一个小转圈，不替换列表
+  const [refreshing, setRefreshing] = useState(
+    () => readViewCache<Task[]>(tasksViewKey('pending', true)) !== undefined
+  )
+  const reqRef = useRef(0)
   const [error, setError] = useState('')
-  const [title, setTitle] = useState('')
-  const [ddl, setDdl] = useState('')
-  const [course, setCourse] = useState('')
-  const [adding, setAdding] = useState(false)
+  const [addOpen, setAddOpen] = useState(false)
   const [exporting, setExporting] = useState(false)
-  const [toast, setToast] = useState('')
   const [onlyDdl, setOnlyDdl] = useState(false)
   const [aiOn, setAiOn] = useState(true)
   const [semesterOnly, setSemesterOnly] = useState(true)
   const [importOpen, setImportOpen] = useState(false)
+  // 悬浮按钮挂载点：主面板（避免随内容滚动）
+  const [fabHost, setFabHost] = useState<HTMLElement | null>(null)
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFabHost(document.querySelector<HTMLElement>('.main-panel'))
+  }, [])
 
   const refresh = async (): Promise<void> => {
+    // 用户快速切筛选时，只让最后一次请求写回状态，避免旧结果覆盖新结果
+    const req = ++reqRef.current
     try {
       const params: Record<string, string> = {}
       if (filter !== 'all') params.status = filter
       if (semesterOnly) params.semester = 'current'
       const res = await listTasks(params)
+      if (req !== reqRef.current) return
       setTasks(res.items)
+      writeViewCache(tasksViewKey(filter, semesterOnly), res.items)
       setError('')
     } catch (e) {
-      setError(String(e))
+      if (req === reqRef.current) setError(String(e))
     } finally {
-      setLoading(false)
+      if (req === reqRef.current) {
+        setLoading(false)
+        setRefreshing(false)
+      }
     }
   }
 
   useEffect(() => {
-    setLoading(true)
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filter, semesterOnly])
+
+  /**
+   * 切筛选时立刻把「这个筛选上次的结果」铺上：有快照就直接显示并静默刷新，
+   * 没有快照才退到骨架屏。放在点击事件里同步执行，避免先渲染一帧旧列表。
+   */
+  const showCachedView = (nextFilter: Filter, nextSemester: boolean): void => {
+    const hit = readViewCache<Task[]>(tasksViewKey(nextFilter, nextSemester))
+    setTasks(hit ?? [])
+    setLoading(!hit)
+    setRefreshing(Boolean(hit))
+  }
+
+  const changeFilter = (next: Filter): void => {
+    if (next === filter) return
+    showCachedView(next, semesterOnly)
+    setFilter(next)
+  }
+
+  const toggleSemester = (): void => {
+    const next = !semesterOnly
+    showCachedView(filter, next)
+    setSemesterOnly(next)
+  }
 
   // AI 显示开关（settings.ai_display_mode）：开=卡片显示 AI 摘要，关=显示原题
   useEffect(() => {
@@ -69,6 +134,9 @@ function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JS
       }
     })()
   }, [])
+
+  // 纯章节类（第六章、实验1…）默认折叠，避免主列表被碎片标题淹没
+  const [showChapters, setShowChapters] = useState(false)
 
   const visibleTasks = useMemo(() => {
     let list = tasks
@@ -85,28 +153,6 @@ function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JS
     return { pending, soon }
   }, [tasks])
 
-  const handleAdd = async (): Promise<void> => {
-    if (!title.trim()) return
-    setAdding(true)
-    try {
-      const ddlIso = ddl ? new Date(ddl).toISOString() : null
-      await createTask({
-        title: title.trim(),
-        ddl: ddlIso,
-        course_name: course.trim() || null,
-        course_abbr: course.trim() || null
-      })
-      setTitle('')
-      setDdl('')
-      setCourse('')
-      await refresh()
-      setToast('任务已创建')
-    } catch (e) {
-      setError(String(e))
-    } finally {
-      setAdding(false)
-    }
-  }
 
   const handleToggle = async (t: Task): Promise<void> => {
     const next = t.status === 'done' ? 'pending' : 'done'
@@ -124,7 +170,7 @@ function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JS
     setExporting(true)
     try {
       const res = await exportCalendar()
-      setToast(`已导出 ${res.count} 个事件 → ${res.path}`)
+      toast(`已导出 ${res.count} 个事件 → ${res.path}`)
     } catch (e) {
       setError(String(e))
     } finally {
@@ -132,169 +178,199 @@ function TasksPage({ onSelectTask, selectedTaskId, platforms }: Props): React.JS
     }
   }
 
-  useEffect(() => {
-    if (!toast) return
-    const timer = setTimeout(() => setToast(''), 4000)
-    return () => clearTimeout(timer)
-  }, [toast])
+  // 分成「正常任务」和「纯章节类」两组
+  const mainTasks = visibleTasks.filter((t) => t.kind !== 'chapter')
+  const chapterTasks = visibleTasks.filter((t) => t.kind === 'chapter')
+  const chapterUndone = chapterTasks.filter((t) => t.status === 'pending').length
 
   return (
-    <div className="max-w-3xl">
-      {/* 工具行 */}
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-1">
-          {(
-            [
-              ['pending', '待办'],
-              ['done', '已完成'],
-              ['all', '全部']
-            ] as [Filter, string][]
-          ).map(([k, label]) => (
+    <div>
+      <header className="page-head compact">
+        <div>
+          <h1 className="page-title">任务</h1>
+          <p className="page-sub">学习通 · 小雅 · 微信群汇总，点击任务可在右侧拆解。</p>
+        </div>
+        <div className="page-actions">
+          <button
+            className="btn btn-secondary sm"
+            data-guide="import"
+            onClick={() => setImportOpen(true)}
+            title="粘贴通知文本，自动解析成任务"
+          >
+            <ListPlus size={14} strokeWidth={1.8} /> 文本导入
+          </button>
+          <button
+            className="btn btn-secondary sm"
+            onClick={() => void handleExport()}
+            disabled={exporting}
+          >
+            {exporting ? (
+              <Loader2 size={14} className="spin" />
+            ) : (
+              <CalendarPlus size={14} strokeWidth={1.8} />
+            )}
+            导出日历
+          </button>
+        </div>
+      </header>
+
+      <div className="task-toolbar">
+        <div className="segment">
+          {FILTERS.map(([k, label]) => (
             <button
               key={k}
-              onClick={() => setFilter(k)}
-              className={`px-3 py-1 rounded-md text-[12px] transition-colors ${
-                filter === k
-                  ? 'bg-[var(--surface-3)] text-[var(--fg)]'
-                  : 'text-[var(--faint)] hover:text-[var(--muted)]'
-              }`}
+              type="button"
+              className={filter === k ? 'active' : ''}
+              onClick={() => changeFilter(k)}
             >
               {label}
             </button>
           ))}
         </div>
-
-        <button
-          data-guide="import"
-          onClick={() => setImportOpen(true)}
-          className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] bg-[var(--surface-2)] border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)] transition-colors"
-          title="粘贴通知文本，自动解析成任务"
-        >
-          <ListPlus size={13} /> 文本导入
-        </button>
-        <button
-          onClick={() => setSemesterOnly((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] border transition-colors ${
-            semesterOnly
-              ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-strong)]'
-              : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--faint)] hover:text-[var(--fg)]'
-          }`}
-          title="隐藏往届课程遗留的作业"
-        >
-          本学期
-        </button>
-        <button
-          onClick={() => setOnlyDdl((v) => !v)}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[12px] border transition-colors ${
-            onlyDdl
-              ? 'bg-[var(--accent-soft)] border-[var(--accent)] text-[var(--accent-strong)]'
-              : 'bg-[var(--surface-2)] border-[var(--border)] text-[var(--faint)] hover:text-[var(--fg)]'
-          }`}
-          title="过滤掉老师没有设置截止时间的作业"
-        >
-          仅有截止时间
-        </button>
-        <button
-          onClick={handleExport}
-          disabled={exporting}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] bg-[var(--surface-2)] border border-[var(--border)] text-[var(--muted)] hover:border-[var(--accent)] hover:text-[var(--fg)] transition-colors disabled:opacity-50"
-        >
-          {exporting ? (
-            <Loader2 size={14} className="animate-spin" />
-          ) : (
-            <CalendarPlus size={14} strokeWidth={1.8} />
-          )}
-          导出日历
-        </button>
-      </div>
-
-      {/* 快速添加 */}
-      <div className="mb-5 p-3 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
-        <div className="flex gap-2">
-          <input
-            value={title}
-            onChange={(e) => setTitle(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && void handleAdd()}
-            placeholder="添加任务，回车确认…"
-            className="flex-1 bg-transparent text-[13px] placeholder:text-[var(--faint)] outline-none"
-          />
+        <div className="right">
           <button
-            onClick={() => void handleAdd()}
-            disabled={adding || !title.trim()}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
+            className="chip"
+            aria-pressed={semesterOnly}
+            onClick={toggleSemester}
+            title="隐藏往届课程遗留的作业"
           >
-            <Plus size={13} />
-            添加
+            本学期
+          </button>
+          <button
+            className="chip"
+            aria-pressed={onlyDdl}
+            onClick={() => setOnlyDdl((v) => !v)}
+            title="过滤掉老师没有设置截止时间的作业"
+          >
+            仅有截止时间
           </button>
         </div>
-        <div className="flex gap-2 mt-2">
-          <input
-            value={course}
-            onChange={(e) => setCourse(e.target.value)}
-            placeholder="课程（可选）"
-            className="w-32 bg-transparent text-[12px] placeholder:text-[var(--faint)] outline-none border-b border-transparent focus:border-[var(--border)]"
-          />
-          <input
-            type="datetime-local"
-            value={ddl}
-            onChange={(e) => setDdl(e.target.value)}
-            className="bg-transparent text-[12px] text-[var(--faint)] outline-none [color-scheme:dark]"
-          />
-        </div>
       </div>
 
+
       {error && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--danger)_18%,transparent)] text-[var(--danger)] text-[12px]">
-          {error}
+        <div className="status-note" style={{ marginBottom: 14 }}>
+          <AlertCircle size={14} />
+          <span style={{ wordBreak: 'break-all' }}>{error}</span>
         </div>
       )}
 
-      {toast && (
-        <div className="mb-4 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] text-[12px]">
-          {toast}
-        </div>
-      )}
-
-      {/* 列表 */}
       {loading ? (
-        <div className="text-[13px] text-[var(--faint)] py-8">加载中…</div>
-      ) : tasks.length === 0 ? (
-        <div className="py-14 text-center">
-          <div className="text-[13px] text-[var(--faint)]">
-            {filter === 'pending' ? '暂无待办，清静一会儿' : '这里还没有内容'}
-          </div>
-          <div className="text-[12px] text-[var(--faint)] mt-1.5">
-            可以在上方手动添加，或等学习通/微信群同步
-          </div>
-        </div>
-      ) : (
-        <div className="space-y-2">
-          {visibleTasks.map((t) => (
-            <TaskCard
-              key={t.id}
-              task={t}
-              active={selectedTaskId === t.id}
-              onSelect={() => onSelectTask(t)}
-              onToggle={() => void handleToggle(t)}
-              onDelete={() => void handleDelete(t)}
-              aiOn={aiOn}
-            />
+        <div className="skeleton-list" aria-label="正在读取任务">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div className="skeleton-row" key={i}>
+              <span className="sk-box" />
+              <span className="sk-lines">
+                <span className="sk-line" style={{ width: `${68 - i * 5}%` }} />
+                <span className="sk-line sm" style={{ width: `${34 + i * 3}%` }} />
+              </span>
+            </div>
           ))}
         </div>
+      ) : tasks.length === 0 ? (
+        <div className="empty">
+          <div className="empty-orb">
+            <Inbox size={18} strokeWidth={1.6} />
+          </div>
+          <h3>{filter === 'pending' ? '暂无待办' : '这里还没有内容'}</h3>
+          <p>点右下角「+」手动添加，或等待学习通 / 微信群同步。</p>
+        </div>
+      ) : (
+        <>
+          <div className="task-list-header">
+            <span>按截止时间排序</span>
+            <span className="mono">
+              {refreshing && <Loader2 size={11} className="spin sync-ico" />}
+              {visibleTasks.length} 条 · 待办 {stats.pending} · 3 天内 {stats.soon}
+            </span>
+          </div>
+          <div
+            className="task-list"
+            key={`${filter}:${semesterOnly ? 1 : 0}:${onlyDdl ? 1 : 0}`}
+          >
+            {mainTasks.map((t) => (
+              <TaskRow
+                key={`${t.id}:${t.status}`}
+                task={t}
+                active={selectedTaskId === t.id}
+                onSelect={() => onSelectTask(t)}
+                onToggle={() => void handleToggle(t)}
+                onDelete={() => void handleDelete(t)}
+                aiOn={aiOn}
+              />
+            ))}
+
+            {chapterTasks.length > 0 && (
+              <div className="task-chapter-block">
+                <button
+                  type="button"
+                  className="task-chapter-head"
+                  onClick={() => setShowChapters((v) => !v)}
+                  aria-expanded={showChapters}
+                >
+                  <span className="task-chapter-name">课内章节</span>
+                  <span className="task-chapter-count">
+                    {chapterTasks.length} 条
+                    {chapterUndone > 0 ? ` · 未完成 ${chapterUndone}` : ''}
+                  </span>
+                  <ChevronDown
+                    size={13}
+                    className={`task-chapter-chev${showChapters ? ' open' : ''}`}
+                  />
+                </button>
+                {showChapters &&
+                  chapterTasks.map((t) => (
+                    <TaskRow
+                      key={`${t.id}:${t.status}`}
+                      task={t}
+                      active={selectedTaskId === t.id}
+                      onSelect={() => onSelectTask(t)}
+                      onToggle={() => void handleToggle(t)}
+                      onDelete={() => void handleDelete(t)}
+                      aiOn={aiOn}
+                    />
+                  ))}
+              </div>
+            )}
+          </div>
+          {visibleTasks.length === 0 && (
+            <div className="empty" style={{ marginTop: 12 }}>
+              <p>当前筛选条件下没有任务。</p>
+            </div>
+          )}
+        </>
       )}
+
+      <div className="page-foot-note">
+        <span>来源：学习通 · 小雅 · 微信群 · 手动</span>
+        <span>side panel · AI 拆解</span>
+      </div>
 
       {importOpen && (
         <ImportTaskDialog onClose={() => setImportOpen(false)} onCreated={() => void refresh()} />
       )}
 
-      <div className="mt-6 text-[11px] text-[var(--faint)]">
-        当前列表 {visibleTasks.length} 条 · 待办 {stats.pending} 条 · 3 天内 {stats.soon} 条
-      </div>
+      {addOpen && <AddTaskDialog onClose={() => setAddOpen(false)} onCreated={() => void refresh()} />}
+
+      {/* 右下角悬浮「+」：挂到主面板上，避免跟随内容滚动 */}
+      {fabHost &&
+        createPortal(
+          <button
+            type="button"
+            className="fab"
+            onClick={() => setAddOpen(true)}
+            title="新建任务"
+            aria-label="新建任务"
+          >
+            <Plus size={22} strokeWidth={2.2} />
+          </button>,
+          fabHost
+        )}
     </div>
   )
 }
 
-function TaskCard({
+function TaskRow({
   task,
   active,
   onSelect,
@@ -310,97 +386,96 @@ function TaskCard({
   aiOn: boolean
 }): React.JSX.Element {
   const urgency = urgencyOf(task.ddl)
-  const bar =
-    urgency === 'danger'
-      ? 'bg-[var(--danger)]'
-      : urgency === 'warn'
-        ? 'bg-[var(--warn)]'
-        : urgency === 'near'
-          ? 'bg-[var(--near)]'
-          : 'bg-transparent'
   const done = task.status === 'done'
+  // 勾选后先播放回弹 + 整行收拢，再落库；避免刷新把行「瞬移」掉
+  const [leaving, setLeaving] = useState(false)
+  const [pop, setPop] = useState(false)
+  const rowRef = useRef<HTMLDivElement>(null)
+
+  const handleCheck = (): void => {
+    if (leaving) return
+    setPop(true)
+    window.setTimeout(() => setPop(false), 280)
+    if (done) {
+      onToggle()
+      return
+    }
+    rowRef.current?.style.setProperty('--row-h', `${rowRef.current.offsetHeight}px`)
+    setLeaving(true)
+    window.setTimeout(onToggle, 260)
+    // 接口失败时任务仍是待办：兜底把行恢复，不让它一直隐身
+    window.setTimeout(() => setLeaving(false), 1500)
+  }
 
   return (
     <div
+      ref={rowRef}
       onClick={onSelect}
-      className={`group relative flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
-        active
-          ? 'bg-[var(--accent-soft)] border-[var(--accent)]'
-          : 'bg-[var(--surface)] border-[var(--border)] hover:border-[var(--border)]'
-      }`}
+      className={`task-row${active ? ' selected' : ''}${leaving ? ' leaving' : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-busy={leaving || undefined}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onSelect()
+        }
+      }}
     >
-      <div className={`absolute left-0 top-3 bottom-3 w-[2px] rounded ${bar}`} />
-
       <button
+        type="button"
+        aria-label={done ? '标记为待办' : '标记为完成'}
         onClick={(e) => {
           e.stopPropagation()
-          onToggle()
+          handleCheck()
         }}
-        className={`mt-0.5 w-4 h-4 shrink-0 rounded border flex items-center justify-center transition-colors ${
-          done
-            ? 'bg-[var(--accent)] border-[var(--accent)]'
-            : 'border-[var(--muted)] hover:border-[var(--accent)]'
-        }`}
+        className={`task-check${done || leaving ? ' checked' : ''}${pop ? ' pop' : ''}`}
       >
-        {done && <Check size={11} className="text-white" strokeWidth={3} />}
+        {(done || leaving) && <Check size={11} strokeWidth={3} />}
       </button>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-[11px] px-1.5 py-0.5 rounded bg-[var(--surface-3)] text-[var(--faint)]">
-            {PLATFORM_LABEL[task.platform] ?? task.platform}
-          </span>
+      <div className="task-main">
+        <div className="task-top">
+          <span className="task-platform">{PLATFORM_LABEL[task.platform] ?? task.platform}</span>
           {task.confidence != null && task.confidence < 0.8 && (
-            <span className="text-[11px] px-1.5 py-0.5 rounded bg-[color-mix(in_oklch,var(--warn)_16%,transparent)] text-[var(--warn)]">
-              ❓待确认
-            </span>
+            <span className="task-flag">待确认</span>
           )}
         </div>
 
-        <div
-          className={`mt-1 text-[13.5px] leading-snug truncate ${
-            done ? 'line-through text-[var(--faint)]' : 'text-[var(--fg)]'
-          }`}
-        >
-          {aiOn && task.summary ? task.summary : task.title}
+        <div className={`task-title${done || leaving ? ' done' : ''}`}>
+          {aiOn && task.summary ? task.summary : task.display_title || task.title}
         </div>
 
-        <div className="mt-1 flex items-center gap-2 text-[11.5px]">
-          {task.course_abbr && <span className="text-[var(--faint)]">{task.course_abbr}</span>}
-          {task.course_abbr && <span className="text-[var(--faint)]">·</span>}
-          <span
-            className={
-              urgency === 'danger'
-                ? 'text-[var(--danger)]'
-                : urgency === 'warn'
-                  ? 'text-[var(--warn)]'
-                  : 'text-[var(--faint)]'
-            }
-          >
+        <div className="task-meta">
+          {task.course_abbr && task.kind !== 'chapter' && <span>{task.course_abbr}</span>}
+          {task.course_abbr && task.kind !== 'chapter' && <span className="sep">·</span>}
+          <span className={`deadline${urgency === 'danger' || urgency === 'warn' ? ' urgent' : ''}`}>
+            <span className="dot" aria-hidden="true" />
             {formatDdl(task.ddl)}
           </span>
         </div>
       </div>
 
-      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className="task-row-actions">
         {task.url && (
           <a
             href={task.url}
             target="_blank"
             rel="noreferrer"
             onClick={(e) => e.stopPropagation()}
-            className="p-1 rounded text-[var(--faint)] hover:text-[var(--accent-strong)]"
+            className="mini-btn"
             title="打开原页面"
           >
             <ExternalLink size={13} />
           </a>
         )}
         <button
+          type="button"
           onClick={(e) => {
             e.stopPropagation()
             onDelete()
           }}
-          className="p-1 rounded text-[var(--faint)] hover:text-[var(--danger)]"
+          className="mini-btn danger"
           title="删除"
         >
           <Trash2 size={13} />

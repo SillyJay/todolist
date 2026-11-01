@@ -9,7 +9,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from db.models import Task
+from db.models import Space, Task
+from routers.pair import current_space
+from services.task_display import display_title, task_kind
 
 router = APIRouter()
 
@@ -57,6 +59,10 @@ def _serialize(t: Task) -> dict:
         "course_name": t.course_name,
         "course_abbr": t.course_abbr,
         "title": t.title,
+        # 展示用：碎片标题补课程名（大学物理BⅠ · 第六章）
+        "display_title": display_title(t.title, t.course_abbr or t.course_name),
+        # chapter = 纯章节类，桌面端也可以折叠归档
+        "kind": task_kind(t.title),
         "ddl": t.ddl,
         "status": t.status,
         "url": t.url,
@@ -73,6 +79,7 @@ def _serialize(t: Task) -> dict:
 
 @router.get("")
 def list_tasks(
+    space: Space = Depends(current_space),
     status: str | None = None,
     platform: str | None = None,
     from_: str | None = None,
@@ -82,7 +89,7 @@ def list_tasks(
     db: Session = Depends(get_db),
 ):
     """任务列表。from/to 为 ISO 日期，按 ddl 过滤。"""
-    q = db.query(Task)
+    q = db.query(Task).filter(Task.space_id == space.id)
     if status:
         q = q.filter(Task.status == status)
     if platform:
@@ -101,9 +108,11 @@ def list_tasks(
 
 
 @router.post("")
-def create_task(body: TaskCreate, db: Session = Depends(get_db)):
+def create_task(
+    body: TaskCreate, space: Space = Depends(current_space), db: Session = Depends(get_db)
+):
     """手动创建任务。"""
-    t = Task(
+    t = Task(space_id=space.id, 
         platform=body.platform,
         course_name=body.course_name,
         course_abbr=body.course_abbr,
@@ -122,10 +131,15 @@ def create_task(body: TaskCreate, db: Session = Depends(get_db)):
 
 
 @router.patch("/{task_id}")
-def update_task(task_id: int, body: TaskPatch, db: Session = Depends(get_db)):
+def update_task(
+    task_id: int,
+    body: TaskPatch,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
     """更新（标记完成/修改/忽略）。"""
     t = db.get(Task, task_id)
-    if not t:
+    if not t or t.space_id != space.id:
         raise HTTPException(404, "task not found")
     for k, v in body.model_dump(exclude_none=True).items():
         setattr(t, k, v)
@@ -136,10 +150,14 @@ def update_task(task_id: int, body: TaskPatch, db: Session = Depends(get_db)):
 
 
 @router.delete("/{task_id}")
-def delete_task(task_id: int, db: Session = Depends(get_db)):
+def delete_task(
+    task_id: int,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
     """删除任务（仅删除数据库记录，不涉及用户文件，符合「工作区只增不删」红线）。"""
     t = db.get(Task, task_id)
-    if not t:
+    if not t or t.space_id != space.id:
         raise HTTPException(404, "task not found")
     db.delete(t)
     db.commit()
@@ -156,11 +174,14 @@ def import_text(body: ImportTextBody):
 
 
 @router.post("/confirm")
-def confirm_task(body: ConfirmBody, db: Session = Depends(get_db)):
+def confirm_task(
+    body: ConfirmBody, space: Space = Depends(current_space), db: Session = Depends(get_db)
+):
     """确认草稿入库。"""
     if not body.title.strip():
         raise HTTPException(400, "标题不能为空")
     t = Task(
+        space_id=space.id,
         platform="manual",
         course_name=body.course_name,
         course_abbr=body.course_name[:8] if body.course_name else None,

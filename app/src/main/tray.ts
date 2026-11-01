@@ -8,12 +8,12 @@ import { join } from 'path'
 
 let tray: Tray | null = null
 
-export function createTray(mainWindow: BrowserWindow): void {
+export function createTray(mainWindow: BrowserWindow, onQuit?: () => void): void {
   const icon = nativeImage.createFromPath(
     join(app.getAppPath(), 'resources', 'icon.png')
   ).resize({ width: 16, height: 16 })
   tray = new Tray(icon)
-  tray.setToolTip('校园信息管理助手')
+  tray.setToolTip('ToDoList')
 
   const contextMenu = Menu.buildFromTemplate([
     {
@@ -28,7 +28,10 @@ export function createTray(mainWindow: BrowserWindow): void {
     {
       label: '退出',
       click: () => {
-        app.exit(0)
+        // 走正常退出流程（会触发 before-quit 停掉后端子进程）；
+        // app.exit(0) 会跳过这些钩子，可能留下孤儿进程。
+        if (onQuit) onQuit()
+        else app.exit(0)
       }
     }
   ])

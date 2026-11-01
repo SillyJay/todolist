@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   ChevronDown,
   ChevronRight,
   Folder,
   FolderOpen,
-  HardDrive,
   Loader2,
   RefreshCw,
   Search,
@@ -17,7 +17,10 @@ import {
   FileVideo,
   FileArchive,
   File as FileIcon,
-  AlertCircle
+  AlertCircle,
+  Filter,
+  X,
+  Check
 } from 'lucide-react'
 import {
   workspaceInfo,
@@ -26,14 +29,28 @@ import {
   revealPath,
   deleteWorkspaceFile,
   deleteWorkspaceTaskDir,
+  getSettings,
+  putSettings,
+  listTasks,
+  scheduleAll,
+  adaptersStatus,
   type WorkspaceInfo,
   type WorkspaceFile
 } from '../lib/api'
 import FilePreview from '../components/FilePreview'
+import { toast } from '../components/Toast'
+import { readViewCache, writeViewCache } from '../lib/viewCache'
 
 /** 文件页：工作区目录树（平台/课程/任务/文件）+ 预览 + 回收站删除。 */
 
 type FileRow = WorkspaceFile & { platform: string; course: string; task: string; taskRel: string }
+
+interface FilesSnapshot {
+  info: WorkspaceInfo
+  expanded: string[]
+}
+
+const FILES_VIEW_KEY = 'files:snapshot'
 
 function human(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -44,36 +61,56 @@ function human(bytes: number): string {
 
 function fileIcon(ext: string): React.JSX.Element {
   if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext))
-    return <FileImage size={13} className="shrink-0 text-[var(--accent-strong)]" />
+    return <FileImage size={14} className="files-icon" />
   if (['xlsx', 'xls', 'xlsm', 'csv'].includes(ext))
-    return <FileSpreadsheet size={13} className="shrink-0 text-[var(--ok)]" />
+    return <FileSpreadsheet size={14} className="files-icon" />
   if (['mp4', 'webm', 'mov', 'avi'].includes(ext))
-    return <FileVideo size={13} className="shrink-0 text-[var(--violet)]" />
+    return <FileVideo size={14} className="files-icon" />
   if (['zip', 'rar', '7z', 'tar', 'gz'].includes(ext))
-    return <FileArchive size={13} className="shrink-0 text-[var(--warn)]" />
+    return <FileArchive size={14} className="files-icon" />
   if (['doc', 'docx', 'pdf', 'ppt', 'pptx', 'txt', 'md'].includes(ext))
-    return <FileText size={13} className="shrink-0 text-[var(--faint)]" />
-  return <FileIcon size={13} className="shrink-0 text-[var(--faint)]" />
+    return <FileText size={14} className="files-icon" />
+  return <FileIcon size={14} className="files-icon" />
 }
 
 function FilesPage(): React.JSX.Element {
-  const [info, setInfo] = useState<WorkspaceInfo | null>(null)
-  const [loading, setLoading] = useState(true)
+  // 回到文件页先画上次的树（含展开状态），再静默刷新，避免整棵树从「读取工作区」重来
+  const [info, setInfo] = useState<WorkspaceInfo | null>(
+    () => readViewCache<FilesSnapshot>(FILES_VIEW_KEY)?.info ?? null
+  )
+  const [loading, setLoading] = useState(
+    () => readViewCache<FilesSnapshot>(FILES_VIEW_KEY) === undefined
+  )
   const [err, setErr] = useState('')
   const [q, setQ] = useState('')
-  const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [expanded, setExpanded] = useState<Set<string>>(
+    () => new Set(readViewCache<FilesSnapshot>(FILES_VIEW_KEY)?.expanded ?? [])
+  )
+  const expandedRef = useRef(expanded)
+  useEffect(() => {
+    expandedRef.current = expanded
+  }, [expanded])
   const [preview, setPreview] = useState<WorkspaceFile | null>(null)
   const [busy, setBusy] = useState(false)
+
+  // 需要获取文件的课程（空 = 全部）；存 settings.file_watch_courses
+  const [watch, setWatch] = useState<string[] | null>(null)
+  const [filterOpen, setFilterOpen] = useState(false)
+  // 课程清单不只来自工作区目录：还要并上课表与任务里出现过的课程
+  const [extraCourses, setExtraCourses] = useState<
+    { key: string; platform: string; name: string }[]
+  >([])
+  const [chaoxingLogged, setChaoxingLogged] = useState(true)
 
   const reload = useCallback(async () => {
     setErr('')
     try {
       const d = await workspaceInfo()
       setInfo(d)
-      setExpanded((prev) => {
-        if (prev.size > 0) return prev
-        // 首次加载默认展开平台和课程层
-        const next = new Set<string>()
+      // 首次加载默认展开平台和课程层；已有展开状态（含缓存恢复）则保留
+      let next = expandedRef.current
+      if (next.size === 0) {
+        next = new Set<string>()
         for (const p of d.tree) {
           next.add(`p:${p.platform}`)
           for (const c of p.courses) {
@@ -82,8 +119,10 @@ function FilesPage(): React.JSX.Element {
             for (const t of c.tasks) next.add(`t:${p.platform}/${c.name}/${t.name}`)
           }
         }
-        return next
-      })
+        setExpanded(next)
+        expandedRef.current = next
+      }
+      writeViewCache<FilesSnapshot>(FILES_VIEW_KEY, { info: d, expanded: [...next] })
     } catch (e) {
       setErr(String(e).slice(0, 160))
     } finally {
@@ -92,13 +131,88 @@ function FilesPage(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void reload()
+
+    // 课表 + 任务里的课程（工作区里没目录也算）
+    void (async () => {
+      const out: { key: string; platform: string; name: string }[] = []
+      try {
+        const sch = await scheduleAll()
+        for (const c of sch.items) {
+          const name = (c.course_abbr || c.course_name || '').trim()
+          if (name) out.push({ key: 'chaoxing/' + name, platform: 'chaoxing', name })
+        }
+      } catch {
+        /* 忽略 */
+      }
+      try {
+        const t = await listTasks({})
+        for (const task of t.items) {
+          const name = (task.course_abbr || task.course_name || '').trim()
+          if (name) out.push({ key: task.platform + '/' + name, platform: task.platform, name })
+        }
+      } catch {
+        /* 忽略 */
+      }
+      setExtraCourses(out)
+    })()
+
+    void adaptersStatus()
+      .then((s) => setChaoxingLogged(s.chaoxing.logged_in))
+      .catch(() => setChaoxingLogged(true))
+
+    void (async () => {
+      try {
+        const s = await getSettings()
+        const raw = s.file_watch_courses
+        setWatch(raw ? (JSON.parse(raw) as string[]) : [])
+      } catch {
+        setWatch([])
+      }
+    })()
   }, [reload])
+
+  /** 按「监听课程」过滤后的树；watch 为空表示全部课程 */
+  const tree = useMemo(() => {
+    if (!info) return []
+    if (!watch || watch.length === 0) return info.tree
+    const keep = new Set(watch)
+    return info.tree
+      .map((p) => {
+        const courses = p.courses.filter((c) => keep.has(`${p.platform}/${c.name}`))
+        return {
+          ...p,
+          courses,
+          count: courses.reduce((s, c) => s + c.count, 0),
+          size: courses.reduce((s, c) => s + c.size, 0)
+        }
+      })
+      .filter((p) => p.courses.length > 0)
+  }, [info, watch])
+
+  const allCourses = useMemo(() => {
+    const map = new Map<string, { key: string; platform: string; name: string }>()
+    for (const p of info?.tree ?? []) {
+      for (const c of p.courses) {
+        map.set(`${p.platform}/${c.name}`, {
+          key: `${p.platform}/${c.name}`,
+          platform: p.platform,
+          name: c.name
+        })
+      }
+    }
+    // 工作区没有目录的课程（还没下过文件）也要能选
+    for (const c of extraCourses) {
+      if (!map.has(c.key)) map.set(c.key, c)
+    }
+    return Array.from(map.values())
+  }, [info, extraCourses])
 
   const flat = useMemo<FileRow[]>(() => {
     if (!info) return []
     const out: FileRow[] = []
-    for (const p of info.tree) {
+    for (const p of tree) {
       for (const c of p.courses) {
         for (const t of c.tasks) {
           const taskRel = t.files[0]
@@ -111,7 +225,7 @@ function FilesPage(): React.JSX.Element {
       }
     }
     return out
-  }, [info])
+  }, [info, tree])
 
   const total = useMemo(
     () => ({ count: flat.length, size: flat.reduce((s, f) => s + f.size, 0) }),
@@ -141,6 +255,7 @@ function FilesPage(): React.JSX.Element {
       await deleteWorkspaceFile(f.rel)
       if (preview?.rel === f.rel) setPreview(null)
       await reload()
+      toast('已移到回收站')
     } catch (e) {
       setErr(String(e).slice(0, 160))
     } finally {
@@ -160,6 +275,7 @@ function FilesPage(): React.JSX.Element {
     try {
       await deleteWorkspaceTaskDir(row.taskRel)
       await reload()
+      toast('任务目录已移到回收站')
     } catch (e) {
       setErr(String(e).slice(0, 160))
     } finally {
@@ -168,64 +284,57 @@ function FilesPage(): React.JSX.Element {
   }
 
   const renderFileRow = (f: FileRow, showPath: boolean): React.JSX.Element => (
-    <div
-      key={f.rel}
-      className="group flex items-center gap-2 pl-1 pr-2 py-1 rounded-md hover:bg-[var(--surface-2)] cursor-pointer"
-      onClick={() => setPreview(f)}
-      title={f.rel}
-    >
-      <span className="w-4" />
+    <div key={f.rel} className="files-row" onClick={() => setPreview(f)} title={f.rel}>
+      <span style={{ width: 14, flex: 'none' }} />
       {fileIcon(f.ext)}
-      <span className="min-w-0 flex-1 text-[12px] text-[var(--muted)] truncate">{f.name}</span>
+      <span className="files-name">{f.name}</span>
       {showPath && (
-        <span className="shrink-0 max-w-[36%] text-[10px] text-[var(--faint)] truncate">
+        <span className="files-path">
           {f.platform} / {f.course} / {f.task}
         </span>
       )}
-      <span className="shrink-0 w-16 text-right text-[10px] text-[var(--faint)]">{human(f.size)}</span>
-      <span className="hidden md:block shrink-0 w-24 text-right text-[10px] text-[var(--faint)]">
-        {f.mtime.slice(5)}
-      </span>
-      <span className="shrink-0 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+      <span className="files-size">{human(f.size)}</span>
+      <span className="files-date">{f.mtime.slice(5)}</span>
+      <span className="files-actions">
         <button
           onClick={(e) => {
             e.stopPropagation()
             setPreview(f)
           }}
-          className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--accent-strong)]"
+          className="att-btn"
           title="预览"
         >
-          <Eye size={11} />
+          <Eye size={12} />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation()
             void openPath(f.rel)
           }}
-          className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--ok)]"
+          className="att-btn"
           title="用系统程序打开"
         >
-          <ExternalLink size={11} />
+          <ExternalLink size={12} />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation()
             void revealPath(f.rel)
           }}
-          className="p-1 rounded text-[var(--faint)] hover:bg-[var(--surface-3)] hover:text-[var(--muted)]"
+          className="att-btn"
           title="在文件夹中显示"
         >
-          <FolderOpen size={11} />
+          <FolderOpen size={12} />
         </button>
         <button
           onClick={(e) => {
             e.stopPropagation()
             void doDeleteFile(f)
           }}
-          className="p-1 rounded text-[var(--faint)] hover:bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] hover:text-[var(--danger)]"
+          className="att-btn danger"
           title="移到回收站"
         >
-          <Trash2 size={11} />
+          <Trash2 size={12} />
         </button>
       </span>
     </div>
@@ -233,129 +342,130 @@ function FilesPage(): React.JSX.Element {
 
   const chevron = (key: string): React.JSX.Element =>
     expanded.has(key) ? (
-      <ChevronDown size={13} className="shrink-0 text-[var(--faint)]" />
+      <ChevronDown size={13} className="files-icon" />
     ) : (
-      <ChevronRight size={13} className="shrink-0 text-[var(--faint)]" />
+      <ChevronRight size={13} className="files-icon" />
     )
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="shrink-0 flex flex-wrap items-center gap-2 pb-3">
-        <div className="flex items-center gap-1.5 text-[12px] text-[var(--faint)]">
-          <HardDrive size={14} className="text-[var(--accent-strong)]" />
-          工作区
+    <div className="files-page">
+      <header className="page-head">
+        <div>
+          <div className="eyebrow">Workspace</div>
+          <h1 className="page-title">文件</h1>
+          <p className="page-sub">
+            {total.count} 个文件 · {human(total.size)} · 按「平台 / 课程 / 任务」归档
+          </p>
         </div>
-        <span className="text-[11px] text-[var(--faint)]">
-          {total.count} 个文件 · {human(total.size)}
-        </span>
+        <div className="page-actions">
+          <button
+            onClick={() => setFilterOpen(true)}
+            className="btn btn-secondary sm"
+            title="选择要获取文件的课程"
+          >
+            <Filter size={13} /> 筛选
+            {watch && watch.length > 0 && <span className="filter-count-badge">{watch.length}</span>}
+          </button>
+          <button
+            onClick={() => void reload()}
+            disabled={loading || busy}
+            className="btn btn-secondary sm"
+            title="刷新"
+          >
+            <RefreshCw size={13} className={loading ? 'spin' : ''} /> 刷新
+          </button>
+          <button onClick={() => void openWorkspace()} className="btn btn-secondary sm">
+            <FolderOpen size={13} /> 打开文件夹
+          </button>
+        </div>
+      </header>
 
-        <div className="relative ml-2">
-          <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--faint)]" />
+      <div className="files-toolbar">
+        <div className="files-search">
+          <Search size={13} className="files-search-icon" />
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="搜索文件 / 课程 / 任务"
-            className="w-56 pl-7 pr-2 py-1.5 rounded-md bg-[var(--bg)] border border-[var(--border)] text-[11.5px] text-[var(--fg)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
+            className="input"
           />
         </div>
-
-        <div className="ml-auto flex items-center gap-1.5">
-          <button
-            onClick={() => void reload()}
-            disabled={loading || busy}
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md border border-[var(--border)] text-[11.5px] text-[var(--faint)] hover:text-[var(--fg)] hover:border-[var(--border)] disabled:opacity-40"
-            title="刷新"
-          >
-            <RefreshCw size={12} className={loading ? 'animate-spin' : ''} /> 刷新
-          </button>
-          <button
-            onClick={() => void openWorkspace()}
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
-          >
-            <FolderOpen size={12} /> 打开文件夹
-          </button>
-        </div>
+        {info && (
+          <span className="files-root" title={info.root}>
+            {info.root}
+          </span>
+        )}
       </div>
 
       {err && (
-        <div className="shrink-0 mb-2 flex items-start gap-1.5 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] border border-[color-mix(in_oklch,var(--danger)_34%,transparent)] text-[11.5px] text-[var(--danger)]">
-          <AlertCircle size={12} className="mt-0.5 shrink-0" />
+        <div className="status-note" style={{ marginBottom: 12, color: 'var(--danger)', borderColor: 'color-mix(in oklch,var(--danger) 30%,transparent)' }}>
+          <AlertCircle size={13} />
           <span>{err}</span>
         </div>
       )}
 
-      {info && (
-        <div className="shrink-0 mb-2 text-[10.5px] text-[var(--faint)] truncate" title={info.root}>
-          {info.root}
-        </div>
-      )}
-
-      <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[var(--border-soft)] bg-[var(--bg-deep)] p-1.5">
+      <div className="files-tree">
         {loading ? (
-          <div className="h-full flex flex-col items-center justify-center gap-2 text-[var(--faint)]">
-            <Loader2 size={16} className="animate-spin" />
-            <span className="text-[12px]">读取工作区…</span>
+          <div className="files-empty">
+            <Loader2 size={17} className="spin" />
+            <span>读取工作区…</span>
           </div>
         ) : q.trim() ? (
           results.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-[12px] text-[var(--faint)]">
-              没有匹配「{q}」的文件
+            <div className="files-empty">
+              <span>没有匹配「{q}」的文件</span>
             </div>
           ) : (
             <div>
-              <div className="px-2 py-1 text-[10.5px] text-[var(--faint)]">{results.length} 个结果</div>
+              <div className="files-group-label">{results.length} 个结果</div>
               {results.map((f) => renderFileRow(f, true))}
             </div>
           )
         ) : !info || flat.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-2 px-8 text-center">
-            <Folder size={20} className="text-[var(--faint)]" />
-            <div className="text-[12.5px] text-[var(--faint)]">工作区还是空的</div>
-            <div className="max-w-sm text-[11px] leading-relaxed text-[var(--faint)]">
+          <div className="files-empty">
+            <div className="empty-orb">
+              <Folder size={18} strokeWidth={1.7} />
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--fg)' }}>工作区还是空的</div>
+            <p style={{ maxWidth: 380, fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)' }}>
               去任务页选中一个学习通或小雅的任务，点附件区的「全部下载」，
               文件会按「平台 / 课程 / 任务」自动归档到这里。
-            </div>
+            </p>
           </div>
         ) : (
-          info.tree.map((p) => {
+          tree.map((p) => {
             const pKey = `p:${p.platform}`
             const pOpen = expanded.has(pKey)
             return (
-              <div key={pKey} className="mb-0.5">
-                <button
-                  onClick={() => toggle(pKey)}
-                  className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-[var(--surface-2)]"
-                >
+              <div key={pKey} className="files-group">
+                <button onClick={() => toggle(pKey)} className="files-group-row">
                   {chevron(pKey)}
-                  <Folder size={13} className="shrink-0 text-[var(--accent-strong)]" />
-                  <span className="text-[12.5px] text-[var(--fg)]">{p.platform}</span>
-                  <span className="text-[10.5px] text-[var(--faint)]">
+                  <Folder size={14} className="files-icon" />
+                  <span className="files-group-name">{p.platform}</span>
+                  <span className="files-group-meta">
                     {p.count} 个文件 · {human(p.size)}
                   </span>
                 </button>
 
-                {pOpen &&
-                  p.courses.map((c) => {
+                {pOpen && (
+                  <div className="tree-children">
+                    {p.courses.map((c) => {
                     const cKey = `c:${p.platform}/${c.name}`
                     const cOpen = expanded.has(cKey)
                     return (
-                      <div key={cKey} className="ml-4">
-                        <button
-                          onClick={() => toggle(cKey)}
-                          className="w-full flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-[var(--surface-2)]"
-                        >
+                      <div key={cKey} className="files-indent">
+                        <button onClick={() => toggle(cKey)} className="files-group-row">
                           {chevron(cKey)}
-                          <Folder size={12} className="shrink-0 text-[var(--faint)]" />
-                          <span className="min-w-0 flex-1 truncate text-left text-[12px] text-[var(--muted)]">
-                            {c.name}
-                          </span>
-                          <span className="shrink-0 text-[10px] text-[var(--faint)]">
+                          <Folder size={13} className="files-icon" />
+                          <span className="files-group-name sub">{c.name}</span>
+                          <span className="files-group-meta">
                             {c.count} 个 · {human(c.size)}
                           </span>
                         </button>
 
-                        {cOpen &&
-                          c.tasks.map((t) => {
+                        {cOpen && (
+                          <div className="tree-children">
+                            {c.tasks.map((t) => {
                             const tKey = `t:${p.platform}/${c.name}/${t.name}`
                             const tOpen = expanded.has(tKey)
                             const firstFile = t.files[0]
@@ -363,20 +473,13 @@ function FilesPage(): React.JSX.Element {
                               ? firstFile.rel.split('/').slice(0, 3).join('/')
                               : `${p.platform}/${c.name}/${t.name}`
                             return (
-                              <div key={tKey} className="ml-4">
-                                <div className="group flex items-center rounded-md hover:bg-[var(--surface-2)]">
-                                  <button
-                                    onClick={() => toggle(tKey)}
-                                    className="min-w-0 flex-1 flex items-center gap-1.5 px-2 py-1"
-                                  >
+                              <div key={tKey} className="files-indent">
+                                <div className="files-task-row">
+                                  <button onClick={() => toggle(tKey)} className="files-task-btn">
                                     {chevron(tKey)}
-                                    <Folder size={12} className="shrink-0 text-[var(--faint)]" />
-                                    <span className="truncate text-[11.5px] text-[var(--faint)]">
-                                      {t.name}
-                                    </span>
-                                    <span className="shrink-0 text-[10px] text-[var(--faint)]">
-                                      {t.count}
-                                    </span>
+                                    <Folder size={13} className="files-icon" />
+                                    <span className="files-task-name">{t.name}</span>
+                                    <span className="files-group-meta">{t.count}</span>
                                   </button>
                                   {firstFile && (
                                     <button
@@ -389,45 +492,200 @@ function FilesPage(): React.JSX.Element {
                                           taskRel
                                         })
                                       }
-                                      className="mr-1 rounded p-1 text-[var(--faint)] opacity-0 hover:text-[var(--danger)] group-hover:opacity-100"
+                                      className="att-btn danger files-task-del"
                                       title="删除整个任务目录"
                                     >
-                                      <Trash2 size={11} />
+                                      <Trash2 size={12} />
                                     </button>
                                   )}
                                 </div>
 
-                                {tOpen &&
-                                  t.files.map((f) =>
-                                    renderFileRow(
-                                      {
-                                        ...f,
-                                        platform: p.platform,
-                                        course: c.name,
-                                        task: t.name,
-                                        taskRel
-                                      },
-                                      false
-                                    )
-                                  )}
+                                {tOpen && (
+                                  <div className="tree-children">
+                                    {t.files.map((f) =>
+                                      renderFileRow(
+                                        {
+                                          ...f,
+                                          platform: p.platform,
+                                          course: c.name,
+                                          task: t.name,
+                                          taskRel
+                                        },
+                                        false
+                                      )
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             )
                           })}
+                          </div>
+                        )}
                       </div>
                     )
                   })}
+                  </div>
+                )}
               </div>
             )
           })
         )}
       </div>
 
-      <div className="shrink-0 pt-2 text-[10.5px] text-[var(--faint)]">
-        程序不会自动删除文件；本页的删除会先进回收站，可恢复。
-      </div>
+      <div className="page-foot-note">程序不会自动删除文件；本页的删除会先进回收站，可恢复。</div>
+
+      {filterOpen && (
+        <CourseFilterDialog
+          all={allCourses}
+          value={watch}
+          loggedIn={chaoxingLogged}
+          onClose={() => setFilterOpen(false)}
+          onSave={async (next) => {
+            try {
+              await putSettings({ file_watch_courses: JSON.stringify(next) })
+              setWatch(next)
+              toast(next.length ? `已设置 ${next.length} 门课程需要获取文件` : '已恢复：全部课程')
+              setFilterOpen(false)
+            } catch (e) {
+              toast(`保存失败：${String(e)}`)
+            }
+          }}
+        />
+      )}
 
       <FilePreview file={preview} onClose={() => setPreview(null)} />
     </div>
+  )
+}
+
+/** 课程筛选小窗：勾选哪些课程需要监听并获取文件 */
+function CourseFilterDialog({
+  all,
+  value,
+  loggedIn,
+  onClose,
+  onSave
+}: {
+  all: { key: string; platform: string; name: string }[]
+  value: string[] | null
+  loggedIn: boolean
+  onClose: () => void
+  onSave: (next: string[]) => void | Promise<void>
+}): React.JSX.Element {
+  // value 为空数组 = 全部课程
+  const [picked, setPicked] = useState<string[]>(value && value.length ? value : [])
+  const [allMode, setAllMode] = useState(!value || value.length === 0)
+
+  const byPlatform = useMemo(() => {
+    const m: Record<string, { key: string; name: string }[]> = {}
+    for (const c of all) (m[c.platform] ||= []).push({ key: c.key, name: c.name })
+    return m
+  }, [all])
+
+  const toggle = (key: string): void => {
+    setAllMode(false)
+    setPicked((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]))
+  }
+
+  return createPortal(
+    <div
+      className="overlay"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose()
+      }}
+    >
+      <div className="dialog" role="dialog" aria-modal="true" aria-label="课程筛选">
+        <div className="dialog-head">
+          <div>
+            <div className="dialog-title">获取哪些课程的文件</div>
+            <div className="dialog-sub">
+              只对勾选的课程监听并拉取附件；不勾的课程会从本页隐藏，也不再获取新文件。
+            </div>
+          </div>
+          <button className="icon-btn" onClick={onClose} aria-label="关闭">
+            <X size={15} />
+          </button>
+        </div>
+
+        <div className="dialog-body">
+          <div className="inline-actions" style={{ gap: 8, marginBottom: 10 }}>
+            <button
+              className="chip"
+              aria-pressed={allMode}
+              onClick={() => {
+                setAllMode(true)
+                setPicked([])
+              }}
+            >
+              <Check size={11} /> 全部课程
+            </button>
+            <button
+              className="chip"
+              aria-pressed={!allMode && picked.length === 0}
+              onClick={() => {
+                setAllMode(false)
+                setPicked([])
+              }}
+            >
+              一门也不获取
+            </button>
+            <span className="mono" style={{ fontSize: 10.5, color: 'var(--faint)', marginLeft: 'auto' }}>
+              {allMode ? '当前：全部' : `当前：${picked.length} 门`}
+            </span>
+          </div>
+
+          {!loggedIn && (
+            <div className="status-note" style={{ marginBottom: 10 }}>
+              <AlertCircle size={13} />
+              <span>
+                学习通未登录：这里只能列出已同步过的课程，可能不完整。到「设置 → 学习通」重新登录后可拿到全部课程。
+              </span>
+            </div>
+          )}
+
+          {all.length === 0 ? (
+            <div className="rail-empty">工作区里还没有课程，先同步一次作业或课表。</div>
+          ) : (
+            <div className="course-filter-list">
+              {Object.entries(byPlatform).map(([platform, courses]) => (
+                <div key={platform} style={{ marginBottom: 8 }}>
+                  <div className="side-label" style={{ margin: '6px 0 4px' }}>
+                    <span>{platform}</span>
+                  </div>
+                  {courses.map((c) => {
+                    const on = allMode || picked.includes(c.key)
+                    return (
+                      <button
+                        key={c.key}
+                        className="filter-item"
+                        aria-pressed={on}
+                        onClick={() => toggle(c.key)}
+                      >
+                        <span className="filter-box" aria-hidden="true">
+                          <Check size={10} strokeWidth={3} />
+                        </span>
+                        <span>{c.name}</span>
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="dialog-foot">
+          <span className="left">{allMode ? '全部课程' : `${picked.length} 门已选`}</span>
+          <button className="btn btn-ghost" onClick={onClose}>
+            取消
+          </button>
+          <button className="btn btn-primary" onClick={() => void onSave(allMode ? [] : picked)}>
+            保存
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
   )
 }
 

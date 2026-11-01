@@ -1,16 +1,47 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, Send, Wrench, Loader2, Sparkles, AlertCircle } from 'lucide-react'
-import { aiStatus, chatStream, type AiStatus } from '../lib/api'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  AlertCircle,
+  ArrowUp,
+  Bot,
+  Check,
+  ChevronDown,
+  Loader2,
+  RefreshCw,
+  Wrench,
+  Sparkles
+} from 'lucide-react'
+import {
+  aiModelCatalog,
+  aiSetActive,
+  aiThinking,
+  aiSetThinking,
+  aiStatus,
+  chatStream,
+  type AiCatalogGroup,
+  type AiStatus
+} from '../lib/api'
+import { dayLabel, ensurePlan, subscribePlan, type PlanState } from '../lib/planStore'
 
 interface Msg {
   role: 'user' | 'assistant' | 'tool' | 'error'
   content: string
   name?: string
+  /** 正在流式输出中（显示光标） */
+  streaming?: boolean
+}
+
+const THINK_OPTIONS = ['auto', 'off', 'low', 'medium', 'high'] as const
+const THINK_LABEL: Record<string, string> = {
+  auto: '自动',
+  off: '关闭',
+  low: '低',
+  medium: '中',
+  high: '高'
 }
 
 const SUGGESTIONS = ['这周有什么要交的？', '今天有什么课？', '帮我导出日历', '下周的作业有哪些']
 
-/** Agent 对话页（规格 §7.3）：SSE + Function Calling */
+/** Agent 对话页（规格 §7.3）：SSE + Function Calling + 启动预取的两日计划 */
 function AgentPage(): React.JSX.Element {
   const [messages, setMessages] = useState<Msg[]>([])
   const [input, setInput] = useState('')
@@ -18,11 +49,73 @@ function AgentPage(): React.JSX.Element {
   const [status, setStatus] = useState<AiStatus | null>(null)
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  // 两日计划由 planStore 预取（App 启动时已开始），这里只订阅
+  const [plan, setPlan] = useState<PlanState>({ text: '', error: '', busy: false, day: '' })
+  // 输入框左下角的模型选择
+  const [catalog, setCatalog] = useState<AiCatalogGroup[]>([])
+  const [modelName, setModelName] = useState('')
+  const [modelOpen, setModelOpen] = useState(false)
+  // 思考强度：auto/off/low/medium/high（右下角）
+  const [think, setThink] = useState('auto')
+  const [thinkOpen, setThinkOpen] = useState(false)
+  const modelRef = useRef<HTMLDivElement>(null)
+  const modelBtnRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => subscribePlan(setPlan), [])
+
+  // 下拉：点外部或 Esc 关闭，Esc 后焦点回到触发按钮
+  useEffect(() => {
+    if (!modelOpen) return
+    const onDown = (e: MouseEvent): void => {
+      if (!modelRef.current?.contains(e.target as Node)) setModelOpen(false)
+    }
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        setModelOpen(false)
+        modelBtnRef.current?.focus()
+      }
+    }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [modelOpen])
+
   useEffect(() => {
     void aiStatus()
       .then(setStatus)
       .catch(() => setStatus({ configured: false, model: null, base_url: null }))
   }, [])
+
+  // 载入模型目录：已配置的服务商 + 各自模型（多供应商，对齐 DSH）
+  const loadCatalog = useCallback(async (): Promise<void> => {
+    try {
+      const st = await aiStatus()
+      setModelName(st.model || 'auto')
+      setStatus(st)
+      const cat = await aiModelCatalog()
+      setCatalog(cat.items)
+      try {
+        const th = await aiThinking()
+        setThink(th.level || 'auto')
+      } catch {
+        /* 忽略 */
+      }
+    } catch {
+      /* 后端未就绪：下拉只显示当前模型 */
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadCatalog()
+  }, [loadCatalog])
+
+  // 兜底：启动时若后端还没就绪，进入本页再补一次
+  useEffect(() => {
+    if (status?.configured) void ensurePlan()
+  }, [status?.configured])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' })
@@ -43,18 +136,41 @@ function AgentPage(): React.JSX.Element {
     setBusy(true)
     setMessages((prev) => [...prev, { role: 'user', content: q }])
 
-    let answer = ''
+    let acc = ''
+    let started = false
     try {
       await chatStream(q, history, (e) => {
         if (e.type === 'tool') {
           setMessages((prev) => [...prev, { role: 'tool', content: '', name: e.name }])
+        } else if (e.type === 'delta') {
+          acc += e.content || ''
+          if (!started) {
+            started = true
+            setMessages((prev) => [...prev, { role: 'assistant', content: acc, streaming: true }])
+          } else {
+            setMessages((prev) => {
+              const next = [...prev]
+              const i = next.length - 1
+              next[i] = { ...next[i], content: acc }
+              return next
+            })
+          }
         } else if (e.type === 'message') {
-          answer = e.content || ''
+          const final = e.content || acc
+          if (started) {
+            setMessages((prev) => {
+              const next = [...prev]
+              const i = next.length - 1
+              next[i] = { ...next[i], content: final, streaming: false }
+              return next
+            })
+          } else if (final) {
+            setMessages((prev) => [...prev, { role: 'assistant', content: final }])
+          }
         } else if (e.type === 'error') {
           setMessages((prev) => [...prev, { role: 'error', content: e.message || '调用失败' }])
         }
       })
-      if (answer) setMessages((prev) => [...prev, { role: 'assistant', content: answer }])
     } catch (e) {
       setMessages((prev) => [...prev, { role: 'error', content: String(e) }])
     } finally {
@@ -62,81 +178,283 @@ function AgentPage(): React.JSX.Element {
     }
   }
 
+  const chooseModel = async (pid: string, m: string): Promise<void> => {
+    setModelName(m)
+    setModelOpen(false)
+    try {
+      await aiSetActive(pid, m)
+      await loadCatalog()
+    } catch {
+      /* 失败不打断输入 */
+    }
+  }
+
   const configured = status?.configured
 
   return (
-    <div className="max-w-3xl h-[calc(100vh-116px)] flex flex-col">
+    <div className="agent-page">
       {!configured && (
-        <div className="mb-3 flex items-start gap-2 px-3 py-2 rounded-lg bg-[color-mix(in_oklch,var(--warn)_14%,transparent)] border border-[var(--warn)] text-[11.5px] text-[var(--warn)]">
-          <AlertCircle size={13} className="mt-0.5 shrink-0" />
+        <div className="status-note" style={{ marginBottom: 14 }}>
+          <AlertCircle size={14} />
           <span>
-            尚未配置 AI API Key，对话不可用。到「设置 → AI 模型」填入智谱 GLM 的 Key
-            即可（有免费额度）。
+            尚未配置 AI API Key，对话不可用。到「设置 → AI 模型」填入智谱 GLM 的 Key 即可（有免费额度）。
           </span>
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1">
-        {messages.length === 0 && (
-          <div className="h-full flex flex-col items-center justify-center text-center">
-            <div className="w-10 h-10 rounded-xl bg-[var(--accent-soft)] flex items-center justify-center mb-3">
-              <Bot size={20} className="text-[var(--accent-strong)]" strokeWidth={1.8} />
-            </div>
-            <div className="text-[13.5px] text-[var(--muted)]">问问你的作业和课表</div>
-            <div className="text-[11.5px] text-[var(--faint)] mt-1.5">
-              可以查待办、查某天课表、创建任务、导出日历
+      <div className="agent-card">
+        <div ref={scrollRef} className="agent-scroll">
+          {/* 启动时预取的「今天 / 明天」艾森豪威尔矩阵计划 */}
+          <section className="plan-card">
+            <div className="plan-head">
+              <div>
+                <div className="rail-kicker">Eisenhower matrix</div>
+                <div className="plan-title">今天与明天 · 该做什么</div>
+                <div className="plan-sub">
+                  {dayLabel(0)} → {dayLabel(1)}
+                </div>
+              </div>
+              <button
+                className="mini-btn"
+                onClick={() => void ensurePlan(true)}
+                disabled={!configured || plan.busy}
+                title="重新生成"
+              >
+                <RefreshCw size={13} className={plan.busy ? 'spin' : undefined} />
+              </button>
             </div>
 
-            <div className="mt-5 grid grid-cols-2 gap-2 w-full max-w-md">
-              {SUGGESTIONS.map((s) => (
+            {plan.error && <div className="plan-note error">{plan.error}</div>}
+            {!plan.error && plan.busy && !plan.text && (
+              <div className="plan-note">
+                <Loader2 size={12} className="spin" /> 正在按艾森豪威尔矩阵整理…
+              </div>
+            )}
+            {!plan.error && !configured && !plan.text && (
+              <div className="plan-note">配置 API Key 后，打开软件会自动生成两日计划。</div>
+            )}
+            {plan.text && <PlanBlock text={plan.text} />}
+          </section>
+
+          {messages.length === 0 && (
+            <div className="agent-empty">
+              <div className="empty-orb">
+                <Bot size={20} strokeWidth={1.7} />
+              </div>
+              <h3>有什么可以帮你？</h3>
+
+              <div className="suggest-grid">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => void send(s)}
+                    disabled={!configured}
+                    className="suggest"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {messages.map((m, i) => (
+            <MessageRow key={i} msg={m} />
+          ))}
+
+          {busy && (
+            <div className="msg-tool">
+              <Loader2 size={13} className="spin" /> 思考中…
+            </div>
+          )}
+        </div>
+
+        <div className="ds-chat-bottom">
+          <div className="ds-composer">
+            <textarea
+              value={input}
+              onChange={(e) => {
+                setInput(e.target.value)
+                const el = e.target
+                el.style.height = 'auto'
+                el.style.height = Math.min(el.scrollHeight, 160) + 'px'
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault()
+                  void send()
+                }
+              }}
+              rows={1}
+              placeholder={configured ? '给ToDoList发消息…' : '请先在设置里配置 API Key'}
+              disabled={!configured}
+            />
+
+            <div className="ds-composer-bar">
+              <div className="ds-model-wrap" ref={modelRef}>
                 <button
-                  key={s}
-                  onClick={() => void send(s)}
-                  disabled={!configured}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[var(--surface)] border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--fg)] hover:border-[var(--border)] disabled:opacity-50"
+                  ref={modelBtnRef}
+                  type="button"
+                  className={`ds-model${modelOpen ? ' open' : ''}`}
+                  onClick={() => setModelOpen((v) => !v)}
+                  aria-haspopup="listbox"
+                  aria-expanded={modelOpen}
+                  aria-label="选择模型"
+                  title="选择模型"
+                >
+                  <span className="ds-model-name">{modelName || 'auto'}</span>
+                  <ChevronDown size={13} className="ds-model-caret" aria-hidden="true" />
+                </button>
+
+                <div
+                  className={`model-menu${modelOpen ? ' open' : ''}`}
+                  role="listbox"
+                  aria-label="选择模型"
+                  aria-hidden={!modelOpen}
+                >
+                  <div className="model-menu-inner">
+                    <div className="model-menu-list">
+                      {catalog.length === 0 && (
+                        <div className="model-menu-label">还没配置服务商</div>
+                      )}
+                      {catalog.map((g) => (
+                        <div key={g.id} className="model-menu-group">
+                          <div className="model-menu-label">
+                            {g.name}
+                            {g.active && <span className="model-menu-current">当前</span>}
+                          </div>
+                          {g.models.map((m) => {
+                            const active = g.active && m === modelName
+                            return (
+                              <button
+                                key={`${g.id}:${m}`}
+                                type="button"
+                                role="option"
+                                aria-selected={active}
+                                tabIndex={modelOpen ? 0 : -1}
+                                className={`model-option${active ? ' active' : ''}`}
+                                onClick={() => void chooseModel(g.id, m)}
+                              >
+                                <span className="model-option-name">{m}</span>
+                                {active && (
+                                  <Check
+                                    size={13}
+                                    strokeWidth={2.4}
+                                    className="model-option-check"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                              </button>
+                            )
+                          })}
+                          {g.models.length === 0 && (
+                            <div className="model-menu-label">（这个服务商还没填模型）</div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="ds-think-wrap">
+                <button
+                  type="button"
+                  className={`ds-think${think !== 'auto' ? ' on' : ''}`}
+                  onClick={() => setThinkOpen((v) => !v)}
+                  title="思考强度（越高越慢但更稳）"
+                  aria-haspopup="listbox"
+                  aria-expanded={thinkOpen}
                 >
                   <Sparkles size={12} />
-                  {s}
+                  {THINK_LABEL[think] || '自动'}
+                  <ChevronDown size={11} />
                 </button>
-              ))}
+                {thinkOpen && (
+                  <div className="ds-think-menu" role="listbox" aria-label="思考强度">
+                    {THINK_OPTIONS.map((lv) => (
+                      <button
+                        key={lv}
+                        type="button"
+                        role="option"
+                        aria-selected={think === lv}
+                        className={`model-option${think === lv ? ' active' : ''}`}
+                        onClick={() => {
+                          setThink(lv)
+                          setThinkOpen(false)
+                          void aiSetThinking(lv)
+                        }}
+                      >
+                        <span className="model-option-name">{THINK_LABEL[lv]}</span>
+                        {think === lv && <Check size={13} className="model-option-check" />}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <button
+                className="ds-send"
+                onClick={() => void send()}
+                disabled={!configured || busy || !input.trim()}
+                title="发送"
+                aria-label="发送"
+              >
+                <ArrowUp size={17} strokeWidth={2.6} />
+              </button>
             </div>
           </div>
-        )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
-        {messages.map((m, i) => (
-          <MessageRow key={i} msg={m} />
-        ))}
+/** 两日计划：把「Q1 紧急且重要：…」这类文字标签换成彩色圆点，与日历图例一致 */
+const Q_TAG: { re: RegExp; cls: string }[] = [
+  { re: /^(?:[-•·]\s*)?(?:Q1|紧急且重要)\s*[：:]?\s*/, cls: 'q1' },
+  { re: /^(?:[-•·]\s*)?(?:Q2|重要不紧急)\s*[：:]?\s*/, cls: 'q2' },
+  { re: /^(?:[-•·]\s*)?(?:Q3|紧急不重要)\s*[：:]?\s*/, cls: 'q3' },
+  { re: /^(?:[-•·]\s*)?(?:Q4|不紧急不重要)\s*[：:]?\s*/, cls: 'q4' }
+]
 
-        {busy && (
-          <div className="flex items-center gap-2 text-[12px] text-[var(--faint)]">
-            <Loader2 size={13} className="animate-spin" /> 思考中…
+function PlanBlock({ text }: { text: string }): React.JSX.Element {
+  const lines = text.split('\n')
+  return (
+    <div className="plan-body">
+      {lines.map((raw, i) => {
+        const line = raw.trim()
+        if (!line) return null
+
+        // 【今天】/【明天】小节标题
+        const sec = line.match(/^【(.+?)】$/)
+        if (sec) {
+          return (
+            <div key={i} className="plan-sec">
+              {sec[1]}
+            </div>
+          )
+        }
+
+        let body = line
+        let cls = ''
+        for (const t of Q_TAG) {
+          const m = body.match(t.re)
+          if (m) {
+            cls = t.cls
+            body = body.slice(m[0].length)
+            break
+          }
+        }
+        if (!cls) body = body.replace(/^[-•·]\s*/, '')
+
+        return (
+          <div key={i} className={`plan-line${cls ? ' ' + cls : ''}`}>
+            <span className={`plan-dot${cls ? ' ' + cls : ''}`} aria-hidden="true" />
+            <span className="plan-line-text">{body || '—'}</span>
           </div>
-        )}
-      </div>
-
-      <div className="shrink-0 mt-2 flex items-end gap-2 p-2 rounded-lg bg-[var(--surface)] border border-[var(--border)]">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) {
-              e.preventDefault()
-              void send()
-            }
-          }}
-          rows={1}
-          placeholder={configured ? '问点什么…（Enter 发送，Shift+Enter 换行）' : '请先配置 API Key'}
-          disabled={!configured}
-          className="flex-1 bg-transparent text-[13px] placeholder:text-[var(--faint)] outline-none resize-none py-1 disabled:cursor-not-allowed"
-        />
-        <button
-          onClick={() => void send()}
-          disabled={!configured || busy || !input.trim()}
-          className="px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
-        >
-          <Send size={13} />
-        </button>
-      </div>
+        )
+      })}
     </div>
   )
 }
@@ -144,38 +462,37 @@ function AgentPage(): React.JSX.Element {
 function MessageRow({ msg }: { msg: Msg }): React.JSX.Element {
   if (msg.role === 'user') {
     return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] px-3 py-2 rounded-lg bg-[color-mix(in_oklch,var(--accent)_18%,transparent)] text-[13px] text-[var(--accent-strong)] whitespace-pre-wrap">
-          {msg.content}
-        </div>
+      <div className="msg-user-row">
+        <div className="msg-user">{msg.content}</div>
       </div>
     )
   }
 
   if (msg.role === 'tool') {
     return (
-      <div className="flex items-center gap-1.5 text-[11px] text-[var(--faint)] pl-1">
-        <Wrench size={11} /> 调用工具 · {msg.name}
+      <div className="msg-tool">
+        <Wrench size={12} /> 调用工具 · {msg.name}
       </div>
     )
   }
 
   if (msg.role === 'error') {
     return (
-      <div className="flex items-start gap-1.5 px-3 py-2 rounded-lg bg-[color-mix(in_oklch,var(--danger)_14%,transparent)] text-[12px] text-[var(--danger)]">
-        <AlertCircle size={12} className="mt-0.5 shrink-0" />
-        <span className="break-all">{msg.content}</span>
+      <div className="status-note">
+        <AlertCircle size={14} />
+        <span style={{ wordBreak: 'break-all' }}>{msg.content}</span>
       </div>
     )
   }
 
   return (
-    <div className="flex gap-2">
-      <div className="w-6 h-6 rounded-md bg-[var(--accent-soft)] flex items-center justify-center shrink-0 mt-0.5">
-        <Bot size={13} className="text-[var(--accent-strong)]" />
+    <div className="msg-assistant">
+      <div className="msg-avatar">
+        <Bot size={14} strokeWidth={1.8} />
       </div>
-      <div className="max-w-[82%] text-[13px] leading-relaxed text-[var(--fg)] whitespace-pre-wrap">
+      <div className="msg-text">
         {msg.content}
+        {msg.streaming && <span className="stream-cursor" aria-hidden="true" />}
       </div>
     </div>
   )

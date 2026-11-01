@@ -52,33 +52,40 @@ export default function LoginDialog({ onClose, onChanged }: Props): React.JSX.El
   }, [])
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[520px] max-h-[86vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl">
-        <header className="flex items-center justify-between px-4 h-11 border-b border-[var(--border)]">
-          <span className="text-[13px] text-[var(--fg)]">账号登录</span>
-          <button onClick={onClose} className="text-[var(--faint)] hover:text-[var(--fg)]">
-            <X size={15} />
+    <div className="overlay" onClick={onClose}>
+      <div
+        className="dialog"
+        style={{ width: 'min(540px, calc(100vw - 24px))' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="dialog-head">
+          <div>
+            <div className="dialog-title">账号登录</div>
+            <div className="dialog-sub">登录后同步作业与课表，全程只读，不会代交作业</div>
+          </div>
+          <button onClick={onClose} className="icon-btn" title="关闭">
+            <X size={16} />
           </button>
-        </header>
-
-        <div className="flex px-4 pt-3 gap-1">
-          <TabBtn
-            active={tab === 'chaoxing'}
-            onClick={() => setTab('chaoxing')}
-            icon={<GraduationCap size={13} />}
-            label="学习通"
-            loggedIn={status?.chaoxing.logged_in}
-          />
-          <TabBtn
-            active={tab === 'xiaoya'}
-            onClick={() => setTab('xiaoya')}
-            icon={<Sparkles size={13} />}
-            label="讯飞小雅"
-            loggedIn={status?.xiaoya.logged_in}
-          />
         </div>
 
-        <div className="p-4 pt-3">
+        <div className="dialog-body">
+          <div className="segment" style={{ marginBottom: 16 }}>
+            <TabBtn
+              active={tab === 'chaoxing'}
+              onClick={() => setTab('chaoxing')}
+              icon={<GraduationCap size={14} />}
+              label="学习通"
+              loggedIn={status?.chaoxing.logged_in}
+            />
+            <TabBtn
+              active={tab === 'xiaoya'}
+              onClick={() => setTab('xiaoya')}
+              icon={<Sparkles size={14} />}
+              label="讯飞小雅"
+              loggedIn={status?.xiaoya.logged_in}
+            />
+          </div>
+
           {tab === 'chaoxing' ? (
             <ChaoxingPanel loggedIn={!!status?.chaoxing.logged_in} onChanged={reloadStatus} />
           ) : (
@@ -106,13 +113,12 @@ function TabBtn({
   return (
     <button
       onClick={onClick}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[12px] transition-colors ${
-        active ? 'bg-[var(--surface-3)] text-[var(--fg)]' : 'text-[var(--faint)] hover:text-[var(--muted)]'
-      }`}
+      className={active ? 'active' : ''}
+      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '0 14px' }}
     >
       {icon}
       {label}
-      <span className={`w-1.5 h-1.5 rounded-full ${loggedIn ? 'bg-[var(--ok)]' : 'bg-[var(--faint)]'}`} />
+      <span className={`status-dot${loggedIn ? ' on' : ''}`} />
     </button>
   )
 }
@@ -194,53 +200,53 @@ function ChaoxingPanel({
   }
 
   return (
-    <div className="space-y-3">
+    <div className="setting-stack">
       {loggedIn ? (
         <>
-          <div className="flex items-center gap-2 text-[12px] text-[var(--ok)]">
-            <Check size={13} /> 学习通已登录
+          <div className="inline-flex items-center gap-2 text-[13px] text-[var(--ok)]">
+            <Check size={14} /> 学习通已登录
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => void doRefresh()}
-            disabled={progress?.running}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50"
-          >
-            {progress?.running ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <RefreshCw size={13} />
-            )}
-            同步作业（约 2 分钟）
-          </button>
+          <div className="inline-actions">
+            <button
+              onClick={() => void doRefresh()}
+              disabled={progress?.running}
+              className="btn btn-secondary sm"
+            >
+              {progress?.running ? (
+                <Loader2 size={13} className="spin" />
+              ) : (
+                <RefreshCw size={13} />
+              )}
+              同步作业（约 2 分钟）
+            </button>
 
-          <button
-            onClick={async () => {
-              setMsg(null)
-              const r = await chaoxingRefreshSchedule()
-              setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '课表已同步' : '课表同步失败') })
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)]"
-          >
-            <CalendarDays size={13} />
-            同步课表（约 1 秒）
-          </button>
+            <button
+              onClick={async () => {
+                setMsg(null)
+                const r = await chaoxingRefreshSchedule()
+                setMsg({ ok: !!r.ok, text: r.message || (r.ok ? '课表已同步' : '课表同步失败') })
+              }}
+              className="btn btn-secondary sm"
+            >
+              <CalendarDays size={13} />
+              同步课表（约 1 秒）
+            </button>
           </div>
 
           {progress && (
-            <div className="text-[11.5px] text-[var(--faint)]">
+            <div className="text-[12px] text-[var(--muted)]">
               {progress.running ? (
                 <>
-                  <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center justify-between mb-1.5 gap-3">
                     <span>
                       正在抓取 {progress.done}/{progress.total || '?'} 门课
                     </span>
-                    <span className="text-[var(--faint)]">{progress.current}</span>
+                    <span className="text-[var(--faint)] truncate">{progress.current}</span>
                   </div>
-                  <div className="h-1 rounded bg-[var(--surface-3)] overflow-hidden">
+                  <div className="bar">
                     <div
-                      className="h-full bg-[var(--accent)] transition-all"
+                      className="bar-fill"
                       style={{
                         width: `${progress.total ? (progress.done / progress.total) * 100 : 5}%`
                       }}
@@ -248,7 +254,7 @@ function ChaoxingPanel({
                   </div>
                 </>
               ) : progress.error ? (
-                <span className="text-[var(--danger)]">同步失败：{progress.error}</span>
+                <span style={{ color: 'var(--danger)' }}>同步失败：{progress.error}</span>
               ) : (
                 <span>
                   同步完成：新增 {progress.created} 条，更新 {progress.updated} 条
@@ -259,12 +265,12 @@ function ChaoxingPanel({
         </>
       ) : (
         <>
-          <div className="space-y-2">
+          <div className="setting-stack" style={{ gap: 9 }}>
             <input
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               placeholder="手机号 / 学号"
-              className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
+              className="input"
             />
             <input
               type="password"
@@ -272,17 +278,17 @@ function ChaoxingPanel({
               onChange={(e) => setPassword(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && void doLogin()}
               placeholder="密码"
-              className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[13px] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
+              className="input"
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="inline-actions">
             <button
               onClick={() => void doLogin()}
               disabled={busy || !username || !password}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
+              className="btn btn-primary sm"
             >
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <LogIn size={13} />}
+              {busy ? <Loader2 size={13} className="spin" /> : <LogIn size={13} />}
               登录
             </button>
             <button
@@ -297,39 +303,42 @@ function ChaoxingPanel({
                   setBusy(false)
                 }
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--fg)]"
+              className="btn btn-secondary sm"
               title="遇到验证码时用这个：弹出浏览器窗口，登录完关闭即可"
             >
               <Globe size={13} /> 验证码？内置浏览器登录
             </button>
             <button
               onClick={() => setCookieMode((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--muted)]"
+              className="btn btn-ghost sm"
             >
               <Cookie size={13} /> 手动 Cookie
             </button>
           </div>
 
           {cookieMode && (
-            <div className="space-y-2">
-              <div className="text-[11px] text-[var(--faint)] leading-relaxed">
+            <div className="setting-stack" style={{ gap: 9 }}>
+              <div className="text-[12px] leading-relaxed text-[var(--faint)]">
                 浏览器登录 i.chaoxing.com → F12 → Application → Cookies，
-                复制整行（形如 <code className="text-[var(--faint)]">_uid=...; _d=...; uf=...</code>）
+                复制整行（形如 <code>_uid=...; _d=...; uf=...</code>）
               </div>
               <textarea
                 value={cookieText}
                 onChange={(e) => setCookieText(e.target.value)}
                 rows={3}
                 placeholder="_uid=...; _d=...; uf=..."
-                className="w-full px-2.5 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] resize-none placeholder:text-[var(--faint)]"
+                className="input"
+                style={{ resize: 'none', fontFamily: 'var(--font-mono)', fontSize: 12 }}
               />
-              <button
-                onClick={() => void doCookie()}
-                disabled={busy || !cookieText.trim()}
-                className="px-3 py-1.5 rounded-md bg-[var(--surface-3)] text-[12px] text-[var(--fg)] disabled:opacity-40"
-              >
-                导入 Cookie
-              </button>
+              <div className="inline-actions">
+                <button
+                  onClick={() => void doCookie()}
+                  disabled={busy || !cookieText.trim()}
+                  className="btn btn-secondary sm"
+                >
+                  导入 Cookie
+                </button>
+              </div>
             </div>
           )}
         </>
@@ -337,12 +346,11 @@ function ChaoxingPanel({
 
       {msg && (
         <div
-          className={`flex items-start gap-1.5 text-[11.5px] ${
-            msg.ok ? 'text-[var(--ok)]' : 'text-[var(--danger)]'
-          }`}
+          className="flex items-start gap-2 text-[12px]"
+          style={{ color: msg.ok ? 'var(--ok)' : 'var(--danger)' }}
         >
-          {msg.ok ? <Check size={12} className="mt-0.5" /> : <AlertCircle size={12} className="mt-0.5" />}
-          <span className="break-all">{msg.text}</span>
+          {msg.ok ? <Check size={13} className="mt-0.5" /> : <AlertCircle size={13} className="mt-0.5" />}
+          <span style={{ wordBreak: 'break-all' }}>{msg.text}</span>
         </div>
       )}
     </div>
@@ -375,35 +383,37 @@ function XiaoyaPanel({
   }
 
   return (
-    <div className="space-y-3">
-      <div className="text-[11.5px] text-[var(--faint)] leading-relaxed">
+    <div className="setting-stack">
+      <div className="text-[12.5px] leading-relaxed text-[var(--muted)]">
         小雅登录需要短信/图形验证，用内置浏览器最省事：点下面按钮 →
-        弹出登录页 → 正常登录 → <span className="text-[var(--faint)]">关闭窗口</span>
+        弹出登录页 → 正常登录 → <span className="text-[var(--fg)]">关闭窗口</span>
         → 程序自动读取 Cookie。全程只读，不会代交作业。
       </div>
 
-      <button
-        onClick={async () => {
-          setBusy(true)
-          setMsg(null)
-          try {
-            const r = await window.api.openLogin('xiaoya')
-            setMsg({ ok: r.ok, text: r.message })
-            if (r.ok) await onChanged()
-          } finally {
-            setBusy(false)
-          }
-        }}
-        disabled={busy}
-        className="flex items-center gap-1.5 px-3 py-2 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-50"
-      >
-        <Globe size={13} /> 用内置浏览器登录
-      </button>
+      <div className="inline-actions">
+        <button
+          onClick={async () => {
+            setBusy(true)
+            setMsg(null)
+            try {
+              const r = await window.api.openLogin('xiaoya')
+              setMsg({ ok: r.ok, text: r.message })
+              if (r.ok) await onChanged()
+            } finally {
+              setBusy(false)
+            }
+          }}
+          disabled={busy}
+          className="btn btn-primary sm"
+        >
+          <Globe size={13} /> 用内置浏览器登录
+        </button>
+      </div>
 
       {loggedIn && (
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center gap-2 text-[12px] text-[var(--ok)]">
-            <Check size={13} /> 已登录
+        <div className="inline-actions">
+          <div className="inline-flex items-center gap-2 text-[13px] text-[var(--ok)]">
+            <Check size={14} /> 已登录
           </div>
           <button
             onClick={async () => {
@@ -423,9 +433,9 @@ function XiaoyaPanel({
               }
             }}
             disabled={busy}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[12px] text-[var(--muted)] hover:border-[var(--accent)] disabled:opacity-50"
+            className="btn btn-secondary sm"
           >
-            {busy ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            {busy ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
             同步作业（约 3 秒）
           </button>
         </div>
@@ -436,21 +446,25 @@ function XiaoyaPanel({
         onChange={(e) => setCookieText(e.target.value)}
         rows={3}
         placeholder="粘贴 xiaoya.iflytek.com 的 Cookie"
-        className="w-full px-2.5 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[11.5px] outline-none focus:border-[var(--accent)] resize-none placeholder:text-[var(--faint)]"
+        className="input"
+        style={{ resize: 'none', fontFamily: 'var(--font-mono)', fontSize: 12 }}
       />
 
-      <div className="flex items-center gap-2">
+      <div className="inline-actions">
         <button
           onClick={() => void doCookie()}
           disabled={busy || !cookieText.trim()}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-[var(--border)] text-[12px] text-[var(--faint)] hover:text-[var(--fg)] disabled:opacity-40"
+          className="btn btn-secondary sm"
         >
           <Cookie size={13} /> 手动粘贴 Cookie
         </button>
       </div>
 
       {msg && (
-        <div className={`text-[11.5px] ${msg.ok ? 'text-[var(--ok)]' : 'text-[var(--warn)]'}`}>
+        <div
+          className="text-[12px]"
+          style={{ color: msg.ok ? 'var(--ok)' : 'var(--warn)', wordBreak: 'break-all' }}
+        >
           {msg.text}
         </div>
       )}

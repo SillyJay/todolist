@@ -7,11 +7,20 @@ import {
   MapPin,
   Upload,
   Download,
-  Settings2,
   Check,
   Info
 } from 'lucide-react'
+import { toast } from '../components/Toast'
+import { readViewCache, writeViewCache } from '../lib/viewCache'
 import { weeksContain, weekOfDate } from '../lib/weeks'
+import { withViewTransition } from '../lib/viewTransition'
+import {
+  DEFAULT_SECTIONS,
+  parseSections,
+  sectionRange,
+  toMin as secToMin,
+  type SectionTime
+} from '../lib/schedule'
 import {
   dayInfo,
   listPlans,
@@ -24,6 +33,7 @@ import {
   scheduleMeta,
   listTasks,
   exportCalendar,
+  getSettings,
   chaoxingRefreshSchedule,
   type DayInfo,
   type DailyPlan,
@@ -33,7 +43,19 @@ import {
 } from '../lib/api'
 
 const WEEK_CN = ['一', '二', '三', '四', '五', '六', '日']
-const HOUR_H = 52
+
+/** 日历页快照：切回本页时先复用上次的月份数据，避免日期格上的任务点/课程先空一下 */
+interface CalendarSnapshot {
+  month: string
+  infos: Record<string, DayInfo>
+  tasks: Task[]
+  plans: DailyPlan[]
+  coursesAll: WeekCourse[]
+  weekNo: number | null
+  firstWeekDate: string | null
+}
+
+const CALENDAR_VIEW_KEY = 'calendar:snapshot'
 
 /** 艾森豪威尔四象限配色（规格 §13.4 上色规则） */
 export const QUADRANTS: Record<
@@ -84,7 +106,14 @@ const textToMin = (t: string): number => {
   return (h || 0) * 60 + (m || 0)
 }
 
-type ViewMode = 'month' | 'week' | 'list'
+type ViewMode = 'month' | 'week' | 'day' | 'list'
+
+const VIEWS: [ViewMode, string][] = [
+  ['month', '月'],
+  ['week', '周'],
+  ['day', '日'],
+  ['list', '列表']
+]
 
 function CalendarPage({
   onNavigate
@@ -92,19 +121,46 @@ function CalendarPage({
   onNavigate?: (p: 'settings') => void
 } = {}): React.JSX.Element {
   const today = useMemo(() => new Date(), [])
+  const initialMonth = ymd(new Date(today.getFullYear(), today.getMonth(), 1))
+  const cachedCal = readViewCache<CalendarSnapshot>(CALENDAR_VIEW_KEY)
   const [cursor, setCursor] = useState(new Date(today.getFullYear(), today.getMonth(), 1))
   const [selected, setSelected] = useState<string>(ymd(today))
   const [view, setView] = useState<ViewMode>('month')
-  const [infos, setInfos] = useState<Record<string, DayInfo>>({})
-  const [tasks, setTasks] = useState<Task[]>([])
-  const [plans, setPlans] = useState<DailyPlan[]>([])
+  // 是否显示农历（设置 → 日历 里可开关）
+  const [showLunar, setShowLunar] = useState(true)
+  const [infos, setInfos] = useState<Record<string, DayInfo>>(() =>
+    cachedCal && cachedCal.month === initialMonth ? cachedCal.infos : {}
+  )
+  const [tasks, setTasks] = useState<Task[]>(() => cachedCal?.tasks ?? [])
+  const [plans, setPlans] = useState<DailyPlan[]>(() => cachedCal?.plans ?? [])
   const [courses, setCourses] = useState<CourseSlot[]>([])
-  const [coursesAll, setCoursesAll] = useState<WeekCourse[]>([])
-  const [weekNo, setWeekNo] = useState<number | null>(null)
-  const [firstWeekDate, setFirstWeekDate] = useState<string | null>(null)
+  const [coursesAll, setCoursesAll] = useState<WeekCourse[]>(() => cachedCal?.coursesAll ?? [])
+  const [weekNo, setWeekNo] = useState<number | null>(() => cachedCal?.weekNo ?? null)
+  const [firstWeekDate, setFirstWeekDate] = useState<string | null>(
+    () => cachedCal?.firstWeekDate ?? null
+  )
   const [chaoxingLogged, setChaoxingLogged] = useState(true) // 默认不打扰，查到未登录才提示
-  const [toast, setToast] = useState('')
   const [formOpen, setFormOpen] = useState(false)
+  // 课表时间：是否信任超星返回的时间；关闭时用节次显示
+  const [autoTime, setAutoTime] = useState(false)
+  const [sections, setSections] = useState<SectionTime[]>(DEFAULT_SECTIONS)
+  const [customSections, setCustomSections] = useState(false)
+  const monthKey = useMemo(
+    () => ymd(new Date(cursor.getFullYear(), cursor.getMonth(), 1)),
+    [cursor]
+  )
+
+  useEffect(() => {
+    writeViewCache<CalendarSnapshot>(CALENDAR_VIEW_KEY, {
+      month: monthKey,
+      infos,
+      tasks,
+      plans,
+      coursesAll,
+      weekNo,
+      firstWeekDate
+    })
+  }, [monthKey, infos, tasks, plans, coursesAll, weekNo, firstWeekDate])
 
   const reloadInfos = useCallback(async () => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
@@ -135,6 +191,17 @@ function CalendarPage({
     void scheduleMeta()
       .then((m) => setWeekNo(m.current_week))
       .catch(() => setWeekNo(null))
+    void getSettings()
+      .then((s) => {
+        setAutoTime(s.chaoxing_auto_time === 'on')
+        setShowLunar(s.calendar_lunar !== 'off')
+        const parsed = parseSections(s.section_times)
+        setCustomSections(!!parsed)
+        if (parsed) setSections(parsed)
+      })
+      .catch(() => {
+        /* 后端未就绪 */
+      })
     void adaptersStatus()
       .then((st) => setChaoxingLogged(!!st.chaoxing?.logged_in))
       .catch(() => {
@@ -145,12 +212,6 @@ function CalendarPage({
   useEffect(() => {
     void scheduleOf(selected).then((r) => setCourses(r.items))
   }, [selected])
-
-  useEffect(() => {
-    if (!toast) return
-    const t = setTimeout(() => setToast(''), 3200)
-    return () => clearTimeout(t)
-  }, [toast])
 
   const tasksByDate = useMemo(() => {
     const m: Record<string, Task[]> = {}
@@ -200,6 +261,11 @@ function CalendarPage({
     return addDays(d, -((d.getDay() + 6) % 7))
   }, [selected, today])
 
+  const selectedDate = useMemo(() => {
+    const d = new Date(`${selected}T00:00:00`)
+    return Number.isNaN(d.getTime()) ? today : d
+  }, [selected, today])
+
   const cells = useMemo(() => {
     const first = new Date(cursor.getFullYear(), cursor.getMonth(), 1)
     const gridStart = addDays(first, -((first.getDay() + 6) % 7))
@@ -225,7 +291,7 @@ function CalendarPage({
       done: 0
     })
     await reloadPlans()
-    setToast('已加入日程')
+    toast('已加入日程')
   }
 
   const toggleDone = async (p: DailyPlan): Promise<void> => {
@@ -235,104 +301,163 @@ function CalendarPage({
 
   const doExport = async (): Promise<void> => {
     const r = await exportCalendar()
-    setToast(`已导出 ${r.count} 个事件 → ${r.path}`)
+    toast(`已导出 ${r.count} 个事件 → ${r.path}`)
   }
 
+  const step = (dir: number): void => {
+    // 月/周/日翻页统一为「带方向的横向滑动」：向后翻，内容向左走；向前翻则相反
+    withViewTransition('calendar', dir > 0 ? 'left' : 'right', () => {
+      if (view === 'week') {
+        setSelected(ymd(addDays(weekStart, dir * 7)))
+        return
+      }
+      if (view === 'day') {
+        setSelected(ymd(addDays(selectedDate, dir)))
+        return
+      }
+      setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + dir, 1))
+    })
+  }
+
+  const goToday = (): void => {
+    const target = new Date(today.getFullYear(), today.getMonth(), 1)
+    if (target.getTime() === cursor.getTime()) {
+      setSelected(ymd(today))
+      return
+    }
+    withViewTransition('calendar', target > cursor ? 'left' : 'right', () => {
+      setCursor(target)
+      setSelected(ymd(today))
+    })
+  }
+
+  const period =
+    view === 'week'
+      ? `${weekStart.getMonth() + 1}/${weekStart.getDate()} – ${addDays(weekStart, 6).getMonth() + 1}/${addDays(weekStart, 6).getDate()}`
+      : view === 'day'
+        ? `${selectedDate.getMonth() + 1} 月 ${selectedDate.getDate()} 日 · 周${
+            WEEK_CN[(selectedDate.getDay() + 6) % 7]
+          }`
+        : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`
+
+  const dayPlans = plansByDate[selected] || []
+  const dayTasks = tasksByDate[selected] || []
+  const selIsToday = selected === ymd(today)
+  const selectedInfo = infos[selected]
+
+  // 视图 + 当前周期一起决定 key：换视图、翻月、翻周、换日都会重放入场动画
+  const viewKey =
+    view === 'month' || view === 'list'
+      ? `${view}:${cursor.getFullYear()}-${cursor.getMonth()}`
+      : view === 'week'
+        ? `week:${ymd(weekStart)}`
+        : `day:${ymd(selectedDate)}`
+
   return (
-    <div className="flex gap-3 h-full min-h-0">
+    <div className="cal-shell">
       {/* ============ 主区 ============ */}
-      <div className="flex-1 min-w-0 flex flex-col gap-2.5">
-        {/* 工具栏 */}
-        <div className="flex items-center gap-2">
-          <div className="flex rounded-md border border-[var(--border)] overflow-hidden">
-            {(
-              [
-                ['month', '月'],
-                ['week', '周'],
-                ['list', '列表']
-              ] as [ViewMode, string][]
-            ).map(([k, label]) => (
+      <div className="cal-main">
+        <div className="cal-toolbar">
+          <div className="cal-title-wrap">
+            <span className="cal-period">{period}</span>
+            {/* 周次：数字到位时才渐显，不再显示「正在同步/课表未同步」这类提示 */}
+            {showLunar && selectedInfo?.lunar && (
+              <span className="cal-sub cal-lunar-label">{selectedInfo.lunar}</span>
+            )}
+            {weekNo != null && (
+              <span className="cal-sub cal-week-label">
+                第 <b key={weekNo} className="cal-week-no">{weekNo}</b> 周
+              </span>
+            )}
+          </div>
+
+          <div className="cal-nav">
+            <button className="mini-btn" onClick={() => step(-1)} aria-label="上一页">
+              <ChevronLeft size={16} />
+            </button>
+            <button className="mini-btn" onClick={() => step(1)} aria-label="下一页">
+              <ChevronRight size={16} />
+            </button>
+            <button className="btn btn-ghost sm" onClick={goToday}>
+              今天
+            </button>
+          </div>
+
+          <div className="segment">
+            {VIEWS.map(([k, label]) => (
               <button
                 key={k}
+                type="button"
+                className={view === k ? 'active' : ''}
                 onClick={() => setView(k)}
-                className={`px-3 py-1 text-[12px] transition-colors ${
-                  view === k ? 'bg-[var(--surface-3)] text-[var(--fg)]' : 'text-[var(--faint)] hover:text-[var(--muted)]'
-                }`}
               >
                 {label}
               </button>
             ))}
           </div>
 
-          <button
-            onClick={() =>
-              view === 'week'
-                ? setSelected(ymd(addDays(weekStart, -7)))
-                : setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))
-            }
-            className="p-1 rounded text-[var(--faint)] hover:text-[var(--fg)] hover:bg-[var(--surface-2)]"
-          >
-            <ChevronLeft size={15} />
-          </button>
-          <span className="text-[13.5px] text-[var(--fg)] min-w-[120px] text-center">
-            {view === 'week'
-              ? `${weekStart.getMonth() + 1}/${weekStart.getDate()} – ${addDays(weekStart, 6).getMonth() + 1}/${addDays(weekStart, 6).getDate()}`
-              : `${cursor.getFullYear()} 年 ${cursor.getMonth() + 1} 月`}
-          </span>
-          <button
-            onClick={() =>
-              view === 'week'
-                ? setSelected(ymd(addDays(weekStart, 7)))
-                : setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1))
-            }
-            className="p-1 rounded text-[var(--faint)] hover:text-[var(--fg)] hover:bg-[var(--surface-2)]"
-          >
-            <ChevronRight size={15} />
-          </button>
-          <button
-            onClick={() => {
-              setCursor(new Date(today.getFullYear(), today.getMonth(), 1))
-              setSelected(ymd(today))
-            }}
-            className="px-2 py-1 rounded text-[11.5px] text-[var(--faint)] border border-[var(--border)] hover:text-[var(--fg)]"
-          >
-            今天
-          </button>
-
-          {weekNo != null && (
-            <span className="px-1.5 py-0.5 rounded text-[11px] bg-[var(--accent-soft)] text-[var(--accent-strong)]">
-              第 {weekNo} 周
-            </span>
-          )}
-
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="right">
             <button
+              className="btn btn-secondary sm"
               onClick={async () => {
-                setToast('正在同步课表…')
+                toast('正在同步课表…')
                 const r = await chaoxingRefreshSchedule()
-                setToast(r.ok ? r.message || '课表已同步' : r.message || '同步失败')
+                toast(r.ok ? r.message || '课表已同步' : r.message || '同步失败')
                 const [all, meta] = await Promise.all([scheduleAll(), scheduleMeta()])
                 setCoursesAll(all.items)
                 setWeekNo(meta.current_week)
               }}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[var(--faint)] border border-[var(--border)] hover:text-[var(--fg)]"
             >
-              <Upload size={12} /> 导入课表
+              <Upload size={13} strokeWidth={1.8} /> 导入课表
             </button>
-            <button
-              onClick={() => void doExport()}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11.5px] text-[var(--faint)] border border-[var(--border)] hover:text-[var(--fg)]"
-            >
-              <Download size={12} /> 导出 ics
+            <button className="btn btn-secondary sm" onClick={() => void doExport()}>
+              <Download size={13} strokeWidth={1.8} /> 导出 ics
             </button>
-            <button
-              onClick={() => setFormOpen((v) => !v)}
-              className="flex items-center gap-1 px-2.5 py-1 rounded text-[11.5px] bg-[var(--accent)] text-white"
-            >
-              <Plus size={12} /> 新建日程
+            <button className="btn btn-primary sm" onClick={() => setFormOpen((v) => !v)}>
+              <Plus size={13} strokeWidth={2} /> 新建日程
             </button>
           </div>
         </div>
+
+        {!autoTime && !customSections && (
+          <div className="status-note" style={{ flex: 'none' }}>
+            <Info size={14} />
+            <span style={{ flex: 1, minWidth: 0 }}>
+              课表时间可能不准确（超星返回的作息常与学校实际不符）。可到「设置 → 学习通」开启自动获取，
+              或手动配置每节课的起止时间。
+            </span>
+            {onNavigate && (
+              <button className="btn btn-secondary sm" onClick={() => onNavigate('settings')}>
+                去设置
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* 图例：月 / 周 / 日视图通用，说明颜色含义 */}
+        {(
+          <div className="cal-legend-bar">
+            <span>
+              <i className="lg q1" />紧急且重要
+            </span>
+            <span>
+              <i className="lg q2" />重要不紧急
+            </span>
+            <span>
+              <i className="lg q3" />紧急不重要
+            </span>
+            <span>
+              <i className="lg q4" />不紧急不重要
+            </span>
+            <span>
+              <i className="lg course" />课程
+            </span>
+            <span>
+              <i className="lg due" />作业截止
+            </span>
+            <em>虚线 = 线上课</em>
+          </div>
+        )}
 
         {formOpen && (
           <PlanForm
@@ -347,386 +472,333 @@ function CalendarPage({
 
         {/* 未接入课表时的引导（不打扰已登录用户） */}
         {!chaoxingLogged && coursesAll.length === 0 && (
-          <div
-            className="flex shrink-0 items-center gap-2.5 rounded-xl border px-3 py-2 text-[11.5px]"
-            style={{
-              background: 'color-mix(in oklch,var(--accent) 10%,transparent)',
-              borderColor: 'color-mix(in oklch,var(--accent) 28%,transparent)',
-              color: 'var(--muted)'
-            }}
-          >
-            <Info size={13} style={{ color: 'var(--accent-strong)', flex: 'none' }} />
-            <span className="min-w-0 flex-1">
+          <div className="status-note" style={{ flex: 'none' }}>
+            <Info size={14} />
+            <span style={{ flex: 1, minWidth: 0 }}>
               还没有课表数据。登录学习通后会自动同步本学期课程，周视图和日视图就能看到每天在哪上课。
             </span>
             {onNavigate && (
-              <button
-                onClick={() => onNavigate('settings')}
-                className="shrink-0 cursor-pointer rounded-md px-2 py-1 text-[11px] font-medium transition-colors"
-                style={{
-                  background: 'var(--primary-bg)',
-                  color: 'var(--primary-fg)',
-                  border: '1px solid var(--border)'
-                }}
-              >
+              <button className="btn btn-secondary sm" onClick={() => onNavigate('settings')}>
                 去设置登录
               </button>
             )}
           </div>
         )}
 
-        {/* 月历 / 列表 */}
-        {view === 'month' ? (
-          <div className="grid grid-cols-7 gap-px bg-[var(--border)] rounded-lg overflow-hidden border border-[var(--border)] shrink-0">
-            {WEEK_CN.map((w) => (
-              <div key={w} className="bg-[var(--bg-deep)] py-1.5 text-center text-[11px] text-[var(--faint)]">
-                周{w}
-              </div>
-            ))}
-            {cells.map((d) => {
-              const key = ymd(d)
-              const info = infos[key]
-              const inMonth = d.getMonth() === cursor.getMonth()
-              const isToday = key === ymd(today)
-              const isSel = key === selected
-              const dayPlans = plansByDate[key] || []
-              const dayTasks = tasksByDate[key] || []
-              return (
-                <button
-                  key={key}
-                  onClick={() => setSelected(key)}
-                  className={`relative h-[78px] px-1.5 pt-1 text-left align-top transition-colors ${
-                    isSel
-                      ? 'bg-[var(--accent-soft)]'
-                      : info?.is_holiday && inMonth
-                        ? 'bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]'
-                        : 'bg-[var(--bg)] hover:bg-[var(--surface-2)]'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span
-                      className={`text-[12.5px] ${
-                        isToday
-                          ? 'bg-[var(--accent)] text-white rounded-full w-[17px] h-[17px] inline-flex items-center justify-center'
-                          : inMonth
-                            ? 'text-[var(--fg)]'
-                            : 'text-[var(--faint)]'
-                      }`}
-                    >
-                      {d.getDate()}
-                    </span>
-                    {info?.is_holiday && inMonth && (
-                      <span className="text-[9px] px-1 rounded bg-[color-mix(in_oklch,var(--danger)_18%,transparent)] text-[var(--danger)]">休</span>
-                    )}
-                  </div>
-                  <div className={`text-[10px] mt-0.5 ${inMonth ? 'text-[var(--faint)]' : 'text-[var(--faint)]'}`}>
-                    {info?.lunar}
-                  </div>
-                  {info?.festivals?.[0] && (
-                    <div className="text-[10px] text-[var(--warn)] truncate leading-tight">
-                      {info.festivals[0]}
+        <div className="cal-body view-swap" key={viewKey}>
+          {view === 'month' ? (
+            <div className="cal-month">
+              {WEEK_CN.map((w) => (
+                <div key={w} className="cal-weekday">
+                  周{w}
+                </div>
+              ))}
+              {cells.map((d) => {
+                const key = ymd(d)
+                const info = infos[key]
+                const inMonth = d.getMonth() === cursor.getMonth()
+                const isToday = key === ymd(today)
+                const isSel = key === selected
+                const weekend = d.getDay() === 0 || d.getDay() === 6
+                const cellPlans = plansByDate[key] || []
+                const cellTasks = tasksByDate[key] || []
+                const more = cellPlans.length - 2
+                return (
+                  <button
+                    key={key}
+                    onClick={() => setSelected(key)}
+                    onDoubleClick={() => {
+                      setSelected(key)
+                      setFormOpen(true)
+                    }}
+                    className={`cal-cell${inMonth ? '' : ' out'}${weekend ? ' weekend' : ''}${
+                      isSel ? ' selected' : ''
+                    }${isToday ? ' today' : ''}${info?.is_holiday && inMonth ? ' holiday' : ''}`}
+                  >
+                    <div className="cal-cell-head">
+                      <span className="cal-daynum">{d.getDate()}</span>
+                      {info?.is_holiday && inMonth && <span className="cal-holiday-tag">休</span>}
+                      {d.getDate() === 1 && (
+                        <span className="cal-month-chip">{d.getMonth() + 1}月</span>
+                      )}
+                      {showLunar && <span className="cal-lunar">{info?.lunar}</span>}
                     </div>
-                  )}
-                  {/* 事项小块 */}
-                  <div className="mt-0.5 space-y-[1px]">
-                    {dayPlans.slice(0, 2).map((p) => {
-                      const q = qOf(p.quadrant)
-                      return (
-                        <div
-                          key={p.id}
-                          className="text-[9.5px] px-1 rounded truncate leading-[13px]"
-                          style={{ background: q.bg, color: q.text }}
-                        >
-                          {minToText(p.start_min)} {p.title}
+
+                    <div className="cal-events">
+                      {cellPlans.slice(0, 2).map((p) => {
+                        const q = qOf(p.quadrant)
+                        return (
+                          <div key={p.id} className="cal-event">
+                            <span className="dot" style={{ background: q.color }} />
+                            <span className="t">{minToText(p.start_min)}</span>
+                            <span className="n">{p.title}</span>
+                          </div>
+                        )
+                      })}
+                      {more > 0 && <span className="cal-more">+{more} 项</span>}
+                      {cellTasks.length > 0 && (
+                        <div className="cal-event task">
+                          <span className="dot" style={{ background: 'var(--violet)' }} />
+                          <span className="t">{cellTasks[0].ddl?.slice(11, 16)}</span>
+                          <span className="n">截止 {cellTasks.length} 项作业</span>
                         </div>
-                      )
-                    })}
-                    {dayTasks.length > 0 && (
-                      <div className="text-[9.5px] px-1 rounded truncate leading-[13px] bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] text-[var(--violet)]">
-                        {dayTasks.length} 项作业截止
+                      )}
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          ) : view === 'week' ? (
+            <WeekView
+              weekStart={weekStart}
+              today={today}
+              infos={infos}
+              plansByDate={plansByDate}
+              tasksByDate={tasksByDate}
+              courses={coursesAll}
+              firstWeekDate={firstWeekDate}
+              autoTime={autoTime}
+              sections={sections}
+              showLunar={showLunar}
+              selected={selected}
+              onSelect={setSelected}
+            />
+          ) : view === 'day' ? (
+            <DayView
+              date={selected}
+              plans={dayPlans}
+              tasks={dayTasks}
+              courses={courses}
+              autoTime={autoTime}
+              sections={sections}
+              onAdd={(title, start, mins, quadrant) =>
+                void addPlan({ date: selected, start, mins, title, quadrant })
+              }
+              onDelete={(id) => void deletePlan(id).then(reloadPlans)}
+              onToggle={(p) => void toggleDone(p)}
+            />
+          ) : (
+            <div className="cal-list">
+              {Array.from({ length: 42 }, (_, i) => addDays(cells[0], i))
+                .filter((d) => {
+                  const k = ymd(d)
+                  return (plansByDate[k] || []).length > 0 || (tasksByDate[k] || []).length > 0
+                })
+                .map((d) => {
+                  const k = ymd(d)
+                  return (
+                    <div key={k} className="cal-list-day">
+                      <div className="cal-list-date">
+                        <b>
+                          {d.getMonth() + 1}/{d.getDate()} 周
+                          {WEEK_CN[(d.getDay() + 6) % 7]}
+                        </b>
+                        <span>
+                          {infos[k]?.lunar} {infos[k]?.festivals?.[0] ?? ''}
+                        </span>
                       </div>
-                    )}
+                      {(plansByDate[k] || []).map((p) => {
+                        const q = qOf(p.quadrant)
+                        return (
+                          <div key={p.id} className="cal-list-row">
+                            <span className="time">
+                              {minToText(p.start_min)}–{minToText(p.end_min)}
+                            </span>
+                            <span className="dot" style={{ background: q.color }} />
+                            <span className="name" style={p.done ? { color: 'var(--faint)', textDecoration: 'line-through' } : undefined}>
+                              {p.title}
+                            </span>
+                          </div>
+                        )
+                      })}
+                      {(tasksByDate[k] || []).map((t) => (
+                        <div key={t.id} className="cal-list-row">
+                          <span className="time">{t.ddl?.slice(11, 16)}</span>
+                          <span className="dot" style={{ background: 'var(--violet)' }} />
+                          <span className="name">{t.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                })}
+              {tasks.length === 0 && plans.length === 0 && (
+                <div className="empty" style={{ margin: 14 }}>
+                  <p>这个月还没有安排。</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ============ 右栏 ============ */}
+      <aside className="cal-rail">
+        <section className="rail-card">
+          <div className="rail-head">
+            <div>
+              <div className="rail-kicker">{selIsToday ? 'Today' : 'Selected day'}</div>
+              <div className="rail-date">
+                {selectedDate.getDate()}
+                <small>
+                  {selectedDate.getMonth() + 1} 月 · 周
+                  {WEEK_CN[(selectedDate.getDay() + 6) % 7]}
+                </small>
+              </div>
+            </div>
+            <button
+              className="mini-btn"
+              onClick={() => setFormOpen(true)}
+              title="在这一天新建日程"
+            >
+              <Plus size={15} />
+            </button>
+          </div>
+
+          {dayPlans.length === 0 && dayTasks.length === 0 ? (
+            <div className="rail-empty">这一天没有安排。</div>
+          ) : (
+            <div className="agenda view-swap" key={selected}>
+              {dayPlans.map((p) => {
+                const q = qOf(p.quadrant)
+                return (
+                  <div key={p.id} className="agenda-row">
+                    <span className="dot" style={{ background: q.color }} />
+                    <span className="time">{minToText(p.start_min)}</span>
+                    <div className="body">
+                      <div className={`name${p.done ? ' done' : ''}`}>{p.title}</div>
+                      <div className="sub">
+                        {minToText(p.start_min)}–{minToText(p.end_min)} · {q.short}
+                      </div>
+                    </div>
+                    <button
+                      className={`agenda-check${p.done ? ' on' : ''}`}
+                      onClick={() => void toggleDone(p)}
+                      title={p.done ? '标记为未完成' : '标记为完成'}
+                    >
+                      {p.done && <Check size={9} strokeWidth={3} />}
+                    </button>
+                    <button
+                      className="mini-btn danger"
+                      onClick={() => void deletePlan(p.id).then(reloadPlans)}
+                      title="删除"
+                    >
+                      <Trash2 size={12} />
+                    </button>
                   </div>
+                )
+              })}
+              {dayTasks.map((t) => (
+                <div key={t.id} className="agenda-row">
+                  <span className="dot" style={{ background: 'var(--violet)' }} />
+                  <span className="time">{t.ddl?.slice(11, 16)}</span>
+                  <div className="body">
+                    <div className="name">{t.title}</div>
+                    <div className="sub">截止 · {t.course_abbr || t.platform}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="rail-foot">双击日期格或点 + 新建日程</div>
+        </section>
+
+        <section className="rail-card">
+          <div className="rail-head">
+            <div>
+              <div className="rail-kicker">Courses</div>
+              <div className="rail-title">当日课表</div>
+            </div>
+          </div>
+          {courses.length === 0 ? (
+            <div className="rail-empty">今天没有课</div>
+          ) : (
+            <div className="agenda">
+              {courses.map((c) => (
+                <div key={c.id} className="agenda-row" style={{ cursor: 'default' }}>
+                  <span className="dot" style={{ background: 'var(--accent)' }} />
+                  <span className="time">{c.start_time}</span>
+                  <div className="body">
+                    <div className="name">{c.course_abbr || c.course_name}</div>
+                    <div className="sub">
+                      {c.start_time}–{c.end_time}
+                      {c.location ? ` · ${c.location}` : ''}
+                    </div>
+                  </div>
+                  {c.location && <MapPin size={11} style={{ color: 'var(--faint)', flex: 'none', marginTop: 4 }} />}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section className="rail-card">
+          <div className="rail-head">
+            <div>
+              <div className="rail-kicker">Next 7 days</div>
+              <div className="rail-title">接下来 7 天</div>
+            </div>
+          </div>
+          <div className="agenda">
+            {next7.map(({ date: d, key, plans: dayPlans2, tasks: dayTasks2 }) => {
+              const count = dayPlans2.length + dayTasks2.length
+              const first = dayPlans2[0]?.title || (dayTasks2[0] ? `截止 ${dayTasks2[0].title}` : '—')
+              const isToday = key === ymd(today)
+              return (
+                <button key={key} className="rail-day" onClick={() => setSelected(key)}>
+                  <span className="d">{isToday ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`}</span>
+                  <span className="n">{first}</span>
+                  <span className="c">{count || ''}</span>
                 </button>
               )
             })}
           </div>
-        ) : view === 'week' ? (
-          <WeekView
-            weekStart={weekStart}
-            today={today}
-            infos={infos}
-            plansByDate={plansByDate}
-            tasksByDate={tasksByDate}
-            courses={coursesAll}
-            firstWeekDate={firstWeekDate}
-            selected={selected}
-            onSelect={setSelected}
-          />
-        ) : (
-          <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg)] divide-y divide-[var(--border-soft)]">
-            {Array.from({ length: 42 }, (_, i) => addDays(cells[0], i))
-              .filter((d) => {
-                const k = ymd(d)
-                return (
-                  (plansByDate[k] || []).length > 0 || (tasksByDate[k] || []).length > 0
-                )
-              })
-              .map((d) => {
-                const k = ymd(d)
-                return (
-                  <div key={k} className="px-3 py-2">
-                    <div className="flex items-baseline gap-2 mb-1">
-                      <span className="text-[12px] text-[var(--fg)]">
-                        {d.getMonth() + 1}/{d.getDate()} 周{WEEK_CN[(d.getDay() + 6) % 7]}
-                      </span>
-                      <span className="text-[10.5px] text-[var(--faint)]">
-                        {infos[k]?.lunar} {infos[k]?.festivals?.[0] ?? ''}
-                      </span>
-                    </div>
-                    {(plansByDate[k] || []).map((p) => {
-                      const q = qOf(p.quadrant)
-                      return (
-                        <div key={p.id} className="flex items-center gap-2 text-[11.5px] py-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full" style={{ background: q.color }} />
-                          <span className="text-[var(--faint)] w-[88px]">
-                            {minToText(p.start_min)}–{minToText(p.end_min)}
-                          </span>
-                          <span className={p.done ? 'text-[var(--faint)] line-through' : 'text-[var(--fg)]'}>
-                            {p.title}
-                          </span>
-                        </div>
-                      )
-                    })}
-                    {(tasksByDate[k] || []).map((t) => (
-                      <div key={t.id} className="flex items-center gap-2 text-[11.5px] py-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-[var(--violet)]" />
-                        <span className="text-[var(--faint)] w-[88px]">{t.ddl?.slice(11, 16)}</span>
-                        <span className="text-[var(--violet)]">{t.title}</span>
-                      </div>
-                    ))}
-                  </div>
-                )
-              })}
-          </div>
-        )}
-
-        {/* 选中日的分钟级规划 + 课表 */}
-        <DayView
-          date={selected}
-          plans={plansByDate[selected] || []}
-          tasks={tasksByDate[selected] || []}
-          courses={courses}
-          onAdd={(title, start, mins, quadrant) =>
-            void addPlan({ date: selected, start, mins, title, quadrant })
-          }
-          onDelete={(id) => void deletePlan(id).then(reloadPlans)}
-          onToggle={(p) => void toggleDone(p)}
-        />
-      </div>
-
-      {/* ============ 右栏 ============ */}
-      <aside className="w-[300px] shrink-0 flex flex-col gap-2.5 overflow-y-auto">
-        {/* 今天 */}
-        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-          <div className="text-[12px] text-[var(--fg)] mb-1">
-            今天 · {today.getMonth() + 1} 月 {today.getDate()} 日
-          </div>
-          {(() => {
-            const tk = ymd(today)
-            const list = plansByDate[tk] || []
-            const tkTasks = tasksByDate[tk] || []
-            if (list.length === 0 && tkTasks.length === 0) {
-              return <div className="text-[11.5px] text-[var(--faint)]">这一天没有安排。</div>
-            }
-            return (
-              <div className="space-y-1">
-                {list.map((p) => {
-                  const q = qOf(p.quadrant)
-                  return (
-                    <div key={p.id} className="flex items-center gap-1.5 text-[11.5px]">
-                      <span className="w-1.5 h-1.5 rounded-full" style={{ background: q.color }} />
-                      <span className="text-[var(--muted)] truncate">{p.title}</span>
-                      <span className="text-[10px] text-[var(--faint)] ml-auto">
-                        {minToText(p.start_min)}
-                      </span>
-                    </div>
-                  )
-                })}
-                {tkTasks.map((t) => (
-                  <div key={t.id} className="flex items-center gap-1.5 text-[11.5px]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--violet)]" />
-                    <span className="text-[var(--violet)] truncate">{t.title}</span>
-                    <span className="text-[10px] text-[var(--violet)] opacity-70 ml-auto">
-                      {t.ddl?.slice(11, 16)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )
-          })()}
         </section>
 
-        {/* 接下来 7 天 */}
-        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-          <div className="text-[12px] text-[var(--fg)] mb-2">接下来 7 天</div>
-          <div className="space-y-2">
-            {next7.map(({ date: d, key, info, plans: dayPlans, tasks: dayTasks }) => {
-              const empty = dayPlans.length === 0 && dayTasks.length === 0
-              const isToday = key === ymd(today)
-              return (
-                <div key={key}>
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <span className={`text-[11px] ${isToday ? 'text-[var(--accent-strong)]' : 'text-[var(--faint)]'}`}>
-                      {isToday ? '今天' : `${d.getMonth() + 1}/${d.getDate()}`}
-                    </span>
-                    <span className="text-[10px] text-[var(--faint)]">
-                      周{WEEK_CN[(d.getDay() + 6) % 7]}
-                    </span>
-                    {info?.festivals?.[0] && (
-                      <span className="text-[9.5px] px-1 rounded bg-[color-mix(in_oklch,var(--warn)_16%,transparent)] text-[var(--warn)]">
-                        {info.festivals[0]}
-                      </span>
-                    )}
-                    <button
-                      onClick={() => {
-                        setSelected(key)
-                        setFormOpen(true)
-                      }}
-                      className="ml-auto text-[var(--faint)] hover:text-[var(--accent-strong)]"
-                      title="在这一天新建"
-                    >
-                      <Plus size={12} />
-                    </button>
-                  </div>
-
-                  {empty ? (
-                    <div className="text-[10.5px] text-[var(--faint)] pl-1">—</div>
-                  ) : (
-                    <div className="space-y-1">
-                      {dayPlans.map((p) => {
-                        const q = qOf(p.quadrant)
-                        return (
-                          <div
-                            key={p.id}
-                            className="group rounded-md px-2 py-1.5 flex items-start gap-1.5"
-                            style={{ background: q.bg, borderLeft: `2px solid ${q.color}` }}
-                          >
-                            <button
-                              onClick={() => void toggleDone(p)}
-                              className={`mt-[2px] w-3.5 h-3.5 shrink-0 rounded-full border flex items-center justify-center ${
-                                p.done ? 'bg-[var(--accent)] border-[var(--accent)]' : 'border-[var(--faint)]'
-                              }`}
-                            >
-                              {p.done ? <Check size={9} className="text-white" strokeWidth={3} /> : null}
-                            </button>
-                            <div className="min-w-0 flex-1">
-                              <div
-                                className={`text-[11.5px] leading-tight truncate ${
-                                  p.done ? 'line-through text-[var(--faint)]' : 'text-[var(--fg)]'
-                                }`}
-                              >
-                                {p.title}
-                              </div>
-                              <div className="text-[10px] text-[var(--faint)] mt-0.5">
-                                {minToText(p.start_min)}–{minToText(p.end_min)}
-                              </div>
-                            </div>
-                            {p.done ? (
-                              <span className="text-[9px] px-1 rounded bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] shrink-0">
-                                已完成
-                              </span>
-                            ) : (
-                              <span
-                                className="text-[9px] px-1 rounded shrink-0"
-                                style={{ background: `color-mix(in oklch, ${q.color} 14%, transparent)`, color: q.text }}
-                              >
-                                {q.short}
-                              </span>
-                            )}
-                            <button
-                              onClick={() => void deletePlan(p.id).then(reloadPlans)}
-                              className="opacity-0 group-hover:opacity-100 text-[var(--faint)] hover:text-[var(--danger)] shrink-0"
-                            >
-                              <Trash2 size={10} />
-                            </button>
-                          </div>
-                        )
-                      })}
-                      {dayTasks.map((t) => (
-                        <div
-                          key={t.id}
-                          className="rounded-md px-2 py-1.5 flex items-start gap-1.5 bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] border-l-2 border-[var(--violet)]"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[11.5px] text-[var(--violet)] truncate">{t.title}</div>
-                            <div className="text-[10px] text-[var(--violet)] mt-0.5">
-                              截止 {t.ddl?.slice(11, 16)} · {t.course_abbr || t.platform}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-        </section>
-
-        {/* 法定节假日 */}
-        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-          <div className="flex items-center gap-1.5 text-[12px] text-[var(--fg)] mb-1.5">
-            <Settings2 size={12} className="text-[var(--faint)]" /> 法定节假日
+        <section className="rail-card">
+          <div className="rail-head">
+            <div>
+              <div className="rail-kicker">Holiday</div>
+              <div className="rail-title">法定节假日</div>
+            </div>
           </div>
           {nextHoliday ? (
-            <div className="text-[11px] text-[var(--faint)] leading-relaxed">
-              下一个假期：<span className="text-[var(--warn)]">{nextHoliday.name}</span>（
-              {nextHoliday.date.getMonth() + 1} 月 {nextHoliday.date.getDate()} 日），还有{' '}
-              {Math.round((nextHoliday.date.getTime() - today.getTime()) / 86400000)} 天。
-              <div className="mt-1.5 text-[10.5px] text-[var(--faint)]">
+            <>
+              <div className="rail-date" style={{ fontSize: 22 }}>
+                {nextHoliday.name}
+                <small>
+                  {nextHoliday.date.getMonth() + 1} 月 {nextHoliday.date.getDate()} 日 · 还有{' '}
+                  {Math.round((nextHoliday.date.getTime() - today.getTime()) / 86400000)} 天
+                </small>
+              </div>
+              <div className="rail-foot">
                 农历与节气为算法推算；放假区间按规则近似，遇国务院调休通知可能偏差。
               </div>
-            </div>
+            </>
           ) : (
-            <div className="text-[11px] text-[var(--faint)]">未来 120 天内暂无识别到的法定节假日。</div>
+            <div className="rail-empty">未来 120 天内暂无识别到的法定节假日。</div>
           )}
-        </section>
 
-        {/* 图例 */}
-        <section className="rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3">
-          <div className="text-[12px] text-[var(--fg)] mb-2">图例</div>
-          <div className="grid grid-cols-2 gap-y-1.5 gap-x-2 text-[10.5px] text-[var(--faint)]">
-            {Object.values(QUADRANTS).map((q) => (
-              <div key={q.key} className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-sm" style={{ background: q.color }} />
-                {q.name}
-              </div>
-            ))}
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[var(--violet)]" /> 作业截止
+          <div className="rail-foot" style={{ marginTop: 14 }}>
+            <div className="rail-title" style={{ marginBottom: 6 }}>
+              图例
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[var(--accent)]" /> 课程
+            <div className="legend">
+              {Object.values(QUADRANTS).map((q) => (
+                <span key={q.key}>
+                  <i style={{ background: q.color }} />
+                  {q.name}
+                </span>
+              ))}
+              <span>
+                <i style={{ background: 'var(--violet)' }} /> 作业截止
+              </span>
+              <span>
+                <i style={{ background: 'var(--accent)' }} /> 课程
+              </span>
             </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[var(--danger)]" /> 法定休假
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-sm bg-[var(--border)]" /> 调休补班
-            </div>
-          </div>
-          <div className="mt-2 text-[10px] text-[var(--faint)] leading-relaxed">
-            单击日期格选中，双击空白处或点「新建日程」添加；事项颜色按艾森豪威尔矩阵区分。
           </div>
         </section>
       </aside>
-
-      {toast && (
-        <div className="fixed bottom-12 right-6 px-3 py-2 rounded-md bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] text-[12px] shadow-lg max-w-[460px] break-all">
-          {toast}
-        </div>
-      )}
     </div>
   )
 }
@@ -748,76 +820,76 @@ function PlanForm({
   const [quadrant, setQuadrant] = useState('q2')
 
   return (
-    <div className="rounded-lg border border-[var(--accent)] bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] p-2.5 flex flex-wrap items-center gap-2">
-      <input
-        autoFocus
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && onSubmit({ date, start, mins, title, quadrant })}
-        placeholder="日程内容"
-        className="flex-1 min-w-[160px] bg-transparent text-[12.5px] outline-none placeholder:text-[var(--faint)]"
-      />
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-        className="bg-transparent text-[11.5px] px-1 py-0.5 rounded border border-[var(--border)] outline-none [color-scheme:dark]"
-      />
-      <input
-        type="time"
-        value={start}
-        onChange={(e) => setStart(e.target.value)}
-        className="bg-transparent text-[11.5px] px-1 py-0.5 rounded border border-[var(--border)] outline-none [color-scheme:dark]"
-      />
-      <select
-        value={mins}
-        onChange={(e) => setMins(Number(e.target.value))}
-        className="bg-[color-mix(in_oklch,var(--accent)_14%,transparent)] text-[11.5px] px-1 py-1 rounded border border-[var(--border)] outline-none"
-      >
-        {[15, 30, 45, 60, 90, 120, 180].map((n) => (
-          <option key={n} value={n}>
-            {n} 分钟
-          </option>
-        ))}
-      </select>
-
-      <div className="flex items-center gap-1">
-        {Object.values(QUADRANTS).map((q) => (
-          <button
-            key={q.key}
-            onClick={() => setQuadrant(q.key)}
-            title={q.name}
-            className={`px-1.5 py-1 rounded text-[10.5px] border transition-all ${
-              quadrant === q.key ? 'border-transparent' : 'border-[var(--border)] opacity-70'
-            }`}
-            style={{
-              background: quadrant === q.key ? q.bg : 'transparent',
-              color: q.text
-            }}
-          >
-            {q.short}
-          </button>
-        ))}
+    <div className="plan-form">
+      <div className="plan-form-row">
+        <input
+          autoFocus
+          className="input grow"
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && onSubmit({ date, start, mins, title, quadrant })}
+          placeholder="日程内容"
+          style={{ height: 34 }}
+        />
+        <input
+          type="date"
+          className="input"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          style={{ width: 148, height: 34 }}
+        />
+        <input
+          type="time"
+          className="input"
+          value={start}
+          onChange={(e) => setStart(e.target.value)}
+          style={{ width: 110, height: 34 }}
+        />
+        <select
+          className="select"
+          value={mins}
+          onChange={(e) => setMins(Number(e.target.value))}
+          style={{ width: 118, height: 34 }}
+        >
+          {[15, 30, 45, 60, 90, 120, 180].map((n) => (
+            <option key={n} value={n}>
+              {n} 分钟
+            </option>
+          ))}
+        </select>
       </div>
 
-      <button
-        onClick={() => onSubmit({ date, start, mins, title, quadrant })}
-        className="px-2.5 py-1 rounded bg-[var(--accent)] text-white text-[11.5px]"
-      >
-        添加
-      </button>
-      <button
-        onClick={onCancel}
-        className="px-2 py-1 rounded text-[11.5px] text-[var(--faint)] hover:text-[var(--fg)]"
-      >
-        取消
-      </button>
+      <div className="plan-form-row">
+        <div className="pill-row" style={{ marginRight: 'auto' }}>
+          {Object.values(QUADRANTS).map((q) => (
+            <button
+              key={q.key}
+              className="pill"
+              aria-pressed={quadrant === q.key}
+              title={q.name}
+              onClick={() => setQuadrant(q.key)}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <span className="dot" style={{ background: q.color, width: 6, height: 6, borderRadius: 999 }} />
+              {q.short}
+            </button>
+          ))}
+        </div>
+        <button
+          className="btn btn-primary sm"
+          onClick={() => onSubmit({ date, start, mins, title, quadrant })}
+        >
+          添加
+        </button>
+        <button className="btn btn-ghost sm" onClick={onCancel}>
+          取消
+        </button>
+      </div>
     </div>
   )
 }
 
-
-/** 周视图（规格 §13.1）：7 列 × 24 小时时间网格 */
+/** 周视图：7 列时间网格，高度自适应容器（默认 07:00–23:00，有越界事件时自动扩展） */
 function WeekView({
   weekStart,
   today,
@@ -826,6 +898,9 @@ function WeekView({
   tasksByDate,
   courses,
   firstWeekDate,
+  autoTime,
+  sections,
+  showLunar,
   selected,
   onSelect
 }: {
@@ -836,15 +911,32 @@ function WeekView({
   tasksByDate: Record<string, Task[]>
   courses: WeekCourse[]
   firstWeekDate: string | null
+  autoTime: boolean
+  sections: SectionTime[]
+  showLunar: boolean
   selected: string
   onSelect: (d: string) => void
 }): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
+  const [boxH, setBoxH] = useState(0)
 
+  // 容器高度 → 每个小时的高度，让 24 小时在可视区域内排得下
+  // 画布有内边距，扣掉后网格才不会在自适应模式下被底部裁切
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 6 * HOUR_H - 12
-  }, [weekStart])
+    const el = scrollRef.current
+    if (!el) return
+    const measure = (): number => {
+      const cs = window.getComputedStyle(el)
+      const pad = parseFloat(cs.paddingTop || '0') + parseFloat(cs.paddingBottom || '0')
+      return Math.max(0, el.clientHeight - pad)
+    }
+    const ro = new ResizeObserver(() => setBoxH(measure()))
+    ro.observe(el)
+    setBoxH(measure())
+    return () => ro.disconnect()
+  }, [])
+
+  const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart])
 
   const coursesByDay = useMemo(() => {
     const m: Record<number, WeekCourse[]> = {}
@@ -852,22 +944,32 @@ function WeekView({
     return m
   }, [courses])
 
+  /** 老数据没有 section 时，用开始时间排位兜底 */
+  const rank = useMemo(() => {
+    const times = Array.from(
+      new Set(courses.map((c) => c.start_time).filter(Boolean) as string[])
+    ).sort()
+    const m: Record<string, number> = {}
+    times.forEach((t, i) => {
+      m[t] = i + 1
+    })
+    return m
+  }, [courses])
+
   const blocksByDay = useMemo(() => {
-    const out: Record<
-      string,
-      {
-        top: number
-        height: number
-        left: string
-        width: string
-        label: string
-        sub: string
-        color: string
-        done?: boolean
-        online?: boolean
-        z: number
-      }[]
-    > = {}
+    type Block = {
+      s: number
+      e: number
+      left: string
+      width: string
+      label: string
+      sub: string
+      color: string
+      done?: boolean
+      online?: boolean
+      z: number
+    }
+    const out: Record<string, Block[]> = {}
 
     for (const d of days) {
       const key = ymd(d)
@@ -882,29 +984,25 @@ function WeekView({
         kind: 'plan' | 'course'
       }[] = []
 
-      for (const p of plansByDate[key] || []) {
-        const q = qOf(p.quadrant)
-        raw.push({
-          start: p.start_min,
-          end: p.end_min,
-          label: p.title,
-          sub: `${minToText(p.start_min)}–${minToText(p.end_min)}`,
-          color: q.color,
-          done: !!p.done,
-          kind: 'plan' as const
-        })
-      }
+      // 周视图不再把日程铺在网格上：会和课程块叠在一起，反而看不清。
+      // 现在只在日视图/侧栏展示，周视图用列头的小圆点提示「这天有事」。
       const weekNo = firstWeekDate ? weekOfDate(d, firstWeekDate) : null
       for (const c of coursesByDay[d.getDay() === 0 ? 7 : d.getDay()] || []) {
-        if (!c.start_time || !c.end_time) continue
+        if (autoTime && (!c.start_time || !c.end_time)) continue
         if (weekNo != null && !weeksContain(c.weeks, weekNo)) continue
-        const st = textToMin(c.start_time)
-        const en = textToMin(c.end_time)
+
+        const sec = c.section ?? (c.start_time ? rank[c.start_time] : 1) ?? 1
+        const range = autoTime
+          ? { start: c.start_time as string, end: c.end_time as string }
+          : sectionRange(sec, sections)
+
         raw.push({
-          start: st,
-          end: en,
+          start: autoTime ? textToMin(c.start_time as string) : secToMin(range.start),
+          end: autoTime ? textToMin(c.end_time as string) : secToMin(range.end),
           label: c.course_abbr || c.course_name || '课程',
-          sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
+          sub: autoTime
+            ? `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`
+            : `第${sec}节${c.location ? ' · ' + c.location : ''}`,
           color: 'var(--accent)',
           online: (c.location || '').includes('线上'),
           kind: 'course' as const
@@ -913,7 +1011,6 @@ function WeekView({
 
       // 课程之间才分道；日程用半透明覆盖层，避免把本来就窄的列再切碎
       const coursesOnly = raw.filter((x) => x.kind === 'course').sort((a, b) => a.start - b.start)
-      const plansOnly = raw.filter((x) => x.kind === 'plan').sort((a, b) => a.start - b.start)
 
       const laneEnds: number[] = []
       const placedCourses = coursesOnly.map((it) => {
@@ -928,46 +1025,57 @@ function WeekView({
       })
       const total = Math.max(1, laneEnds.length)
 
-      const geom = (it: { start: number; end: number }): { top: number; height: number } => ({
-        top: (it.start / 60) * HOUR_H,
-        height: Math.max(14, ((it.end - it.start) / 60) * HOUR_H - 1)
-      })
-
-      out[key] = [
-        ...placedCourses.map((it) => ({
-          ...geom(it),
-          left: `calc(${(it.lane * 100) / total}% + 1px)`,
-          width: `calc(${100 / total}% - 2px)`,
-          label: it.label,
-          sub: it.sub,
-          color: it.color,
-          done: it.done,
-          online: it.online,
-          z: 1
-        })),
-        ...plansOnly.map((it) => ({
-          ...geom(it),
-          left: 'calc(2px)',
-          width: 'calc(100% - 4px)',
-          label: it.label,
-          sub: it.sub,
-          color: it.color,
-          done: it.done,
-          online: it.online,
-          z: 3
-        }))
-      ]
+      out[key] = placedCourses.map((it) => ({
+        s: it.start,
+        e: it.end,
+        left: `calc(${(it.lane * 100) / total}% + 1px)`,
+        width: `calc(${100 / total}% - 2px)`,
+        label: it.label,
+        sub: it.sub,
+        color: it.color,
+        done: it.done,
+        online: it.online,
+        z: 1
+      }))
     }
     return out
-  }, [days, plansByDate, coursesByDay, firstWeekDate])
+  }, [days, coursesByDay, firstWeekDate])
 
-  const nowTop = ((today.getHours() * 60 + today.getMinutes()) / 60) * HOUR_H
+  /** 可视时间窗：默认 07:00–23:00；有事件越界时向外扩 */
+  const [winStart, winEnd] = useMemo(() => {
+    let s = 7
+    let e = 23
+    for (const list of Object.values(blocksByDay)) {
+      for (const b of list) {
+        s = Math.min(s, Math.floor(b.s / 60))
+        e = Math.max(e, Math.ceil(b.e / 60))
+      }
+    }
+    s = Math.max(0, s)
+    e = Math.min(24, e)
+    if (e - s < 4) e = Math.min(24, s + 4)
+    return [s, e]
+  }, [blocksByDay])
+
+  const span = Math.max(1, winEnd - winStart)
+  // 让整段窗口正好铺满容器；太挤时给下限并允许滚动
+  const hourH = boxH > 120 ? Math.max(22, boxH / span) : 34
+  const overflowing = hourH * span > boxH + 1
+  const gridH = span * hourH
+
+  const nowMin = today.getHours() * 60 + today.getMinutes()
+  const nowTop = ((nowMin - winStart * 60) / 60) * hourH
+  const nowVisible = nowMin >= winStart * 60 && nowMin <= winEnd * 60
+
+  useEffect(() => {
+    if (overflowing && scrollRef.current) scrollRef.current.scrollTop = 0
+  }, [overflowing, weekStart])
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg)] overflow-hidden">
+    <div className="cal-week">
       {/* 表头 */}
-      <div className="flex shrink-0 border-b border-[var(--border)] bg-[var(--bg-deep)]">
-        <div className="w-10 shrink-0" />
+      <div className="cal-week-head">
+        <div className="corner" />
         {days.map((d) => {
           const key = ymd(d)
           const info = infos[key]
@@ -978,35 +1086,44 @@ function WeekView({
             <button
               key={key}
               onClick={() => onSelect(key)}
-              className={`flex-1 min-w-0 px-1 py-1 text-center border-l border-[var(--border-soft)] transition-colors ${
-                isSel ? 'bg-[var(--accent-soft)]' : holiday ? 'bg-[color-mix(in_oklch,var(--danger)_10%,transparent)] hover:bg-[color-mix(in_oklch,var(--accent)_10%,transparent)]' : 'hover:bg-[var(--surface-2)]'
+              className={`cal-week-day${isSel ? ' selected' : ''}${isToday ? ' today' : ''}${
+                holiday ? ' holiday' : ''
               }`}
             >
-              <div className={`text-[10.5px] ${isToday ? 'text-[var(--accent-strong)]' : 'text-[var(--faint)]'}`}>
-                周{WEEK_CN[(d.getDay() + 6) % 7]}
-              </div>
-              <div className={`text-[13px] ${isToday ? 'text-white' : 'text-[var(--fg)]'}`}>
+              <div className="w">周{WEEK_CN[(d.getDay() + 6) % 7]}</div>
+              <div className="d">
                 {d.getDate()}
+                {(() => {
+                  const plans = (plansByDate[key] || []).length
+                  const dues = (tasksByDate[key] || []).length
+                  const n = plans + dues
+                  if (!n) return null
+                  return (
+                    <span
+                      className="cal-week-dot"
+                      title={`${plans ? `${plans} 项日程` : ''}${plans && dues ? '，' : ''}${
+                        dues ? `${dues} 个截止` : ''
+                      }（点这天看详情）`}
+                    />
+                  )
+                })()}
               </div>
-              <div className="text-[9px] text-[var(--faint)] truncate">
-                {info?.festivals?.[0] || info?.lunar}
-              </div>
+              <div className="l">{info?.festivals?.[0] || (showLunar ? info?.lunar : '')}</div>
             </button>
           )
         })}
       </div>
 
       {/* 时间网格 */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto">
-        <div className="relative flex" style={{ height: 24 * HOUR_H }}>
-          <div className="w-10 shrink-0 relative">
-            {Array.from({ length: 24 }, (_, h) => (
-              <div
-                key={h}
-                className="absolute left-0 right-0 text-right pr-1 text-[9px] text-[var(--faint)]"
-                style={{ top: h * HOUR_H + 1 }}
-              >
-                {pad(h)}
+      <div
+        ref={scrollRef}
+        className={`cal-week-scroll${overflowing ? '' : ' fit'}`}
+      >
+        <div className="cal-week-grid" style={{ height: gridH }}>
+          <div className="cal-week-times">
+            {Array.from({ length: span + 1 }, (_, i) => (
+              <div key={i} className="cal-week-time" style={{ top: i * hourH }}>
+                {pad(winStart + i)}
               </div>
             ))}
           </div>
@@ -1014,62 +1131,44 @@ function WeekView({
           {days.map((d) => {
             const key = ymd(d)
             const isToday = key === ymd(today)
-            const dayTasks = tasksByDate[key] || []
             return (
-              <div key={key} className="relative flex-1 min-w-0 border-l border-[var(--border-soft)]">
-                {Array.from({ length: 24 }, (_, h) => (
-                  <div
-                    key={h}
-                    className="absolute left-0 right-0 border-t border-[var(--border-soft)]"
-                    style={{ top: h * HOUR_H }}
-                  />
+              <div key={key} className="cal-week-col">
+                {Array.from({ length: span + 1 }, (_, i) => (
+                  <div key={i} className="cal-week-line" style={{ top: i * hourH }} />
                 ))}
 
-                {isToday && (
-                  <div
-                    className="absolute left-0 right-0 border-t border-[var(--danger)] z-20"
-                    style={{ top: nowTop }}
-                  >
-                    <span className="absolute -left-0.5 -top-[3px] w-1.5 h-1.5 rounded-full bg-[var(--danger)]" />
-                  </div>
+                {isToday && nowVisible && (
+                  <div className="cal-now" style={{ top: nowTop }} aria-hidden="true" />
                 )}
 
-                {dayTasks.map((t, i) => {
-                  if (!t.ddl) return null
-                  const m = textToMin(t.ddl.slice(11, 16))
+
+                {(blocksByDay[key] || []).map((b, i) => {
+                  const top = ((b.s - winStart * 60) / 60) * hourH
+                  const height = Math.max(14, ((b.e - b.s) / 60) * hourH - 1)
                   return (
                     <div
-                      key={`task-${t.id}`}
-                      className="absolute left-0.5 right-0.5 z-10 text-[9px] px-1 rounded bg-[color-mix(in_oklch,var(--violet)_16%,transparent)] text-[var(--violet)] truncate border-l-2 border-[var(--violet)]"
-                      style={{ top: (m / 60) * HOUR_H + i * 12 }}
-                      title={`${t.title} 截止 ${t.ddl.slice(11, 16)}`}
+                      key={i}
+                      className={`cal-week-block${b.done ? ' done' : ''}${
+                        b.online ? ' online' : ''
+                      }`}
+                      style={{
+                        top,
+                        height,
+                        left: b.left,
+                        width: b.width,
+                        zIndex: b.z,
+                        background: `color-mix(in oklch, ${b.color} ${
+                          b.online ? 9 : b.z > 1 ? 18 : 12
+                        }%, transparent)`,
+                        boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${b.color} 34%, transparent)`
+                      }}
+                      title={`${b.label} ${b.sub}`}
                     >
-                      {t.ddl.slice(11, 16)} {t.title}
+                      <div className="lbl">{b.label}</div>
+                      {height > 30 && <div className="sub">{b.sub}</div>}
                     </div>
                   )
                 })}
-
-                {(blocksByDay[key] || []).map((b, i) => (
-                  <div
-                    key={i}
-                    className="absolute rounded px-1 py-0.5 text-[9.5px] leading-tight overflow-hidden"
-                    style={{
-                      top: b.top,
-                      height: b.height,
-                      left: b.left,
-                      width: b.width,
-                      zIndex: b.z,
-                      background: `color-mix(in oklch, ${b.color} ${b.online ? 10 : b.z > 1 ? 26 : 18}%, transparent)`,
-                      borderLeft: `2px ${b.online ? 'dashed' : 'solid'} ${b.color}`,
-                      color: b.done ? 'var(--faint)' : 'var(--fg)',
-                      textDecoration: b.done ? 'line-through' : 'none'
-                    }}
-                    title={`${b.label} ${b.sub}`}
-                  >
-                    <div className="truncate">{b.label}</div>
-                    {b.height > 30 && <div className="text-[8.5px] opacity-70 truncate">{b.sub}</div>}
-                  </div>
-                ))}
               </div>
             )
           })}
@@ -1079,12 +1178,14 @@ function WeekView({
   )
 }
 
-/** 日视图：分钟级时间轴 + 当日课表（规格 §13.4 / §13.5） */
+/** 日视图：单日时间轴，同样自适应高度 */
 function DayView({
   date,
   plans,
   tasks,
   courses,
+  autoTime,
+  sections,
   onAdd,
   onDelete,
   onToggle
@@ -1093,24 +1194,37 @@ function DayView({
   plans: DailyPlan[]
   tasks: Task[]
   courses: CourseSlot[]
+  autoTime: boolean
+  sections: SectionTime[]
   onAdd: (title: string, start: string, mins: number, quadrant: string) => void
   onDelete: (id: number) => void
   onToggle: (p: DailyPlan) => void
 }): React.JSX.Element {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [boxH, setBoxH] = useState(0)
   const [title, setTitle] = useState('')
   const [time, setTime] = useState('20:00')
   const [minutes, setMinutes] = useState(60)
   const [quadrant, setQuadrant] = useState('q2')
 
   useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = 6 * HOUR_H - 12
-  }, [date])
+    const el = scrollRef.current
+    if (!el) return
+    const measure = (): number => {
+      const cs = window.getComputedStyle(el)
+      const pad = parseFloat(cs.paddingTop || '0') + parseFloat(cs.paddingBottom || '0')
+      return Math.max(0, el.clientHeight - pad)
+    }
+    const ro = new ResizeObserver(() => setBoxH(measure()))
+    ro.observe(el)
+    setBoxH(measure())
+    return () => ro.disconnect()
+  }, [])
 
   const blocks = useMemo(() => {
     const list: {
-      top: number
-      height: number
+      s: number
+      e: number
       label: string
       sub: string
       color: string
@@ -1122,185 +1236,200 @@ function DayView({
       const q = qOf(p.quadrant)
       list.push({
         id: p.id,
-        top: (p.start_min / 60) * HOUR_H,
-        height: Math.max(16, ((p.end_min - p.start_min) / 60) * HOUR_H - 1),
+        s: p.start_min,
+        e: p.end_min,
         label: p.title,
         sub: `${minToText(p.start_min)}–${minToText(p.end_min)}`,
         color: q.color,
         done: !!p.done
       })
     }
+    const rank: Record<string, number> = {}
+    Array.from(new Set(courses.map((c) => c.start_time).filter(Boolean) as string[]))
+      .sort()
+      .forEach((t, i) => {
+        rank[t] = i + 1
+      })
     for (const c of courses) {
-      if (!c.start_time || !c.end_time) continue
-      const s = textToMin(c.start_time)
-      const e = textToMin(c.end_time)
+      if (autoTime && (!c.start_time || !c.end_time)) continue
+      const sec = c.section ?? (c.start_time ? rank[c.start_time] : 1) ?? 1
+      const range = autoTime
+        ? { start: c.start_time as string, end: c.end_time as string }
+        : sectionRange(sec, sections)
       list.push({
-        top: (s / 60) * HOUR_H,
-        height: Math.max(16, ((e - s) / 60) * HOUR_H - 1),
+        s: autoTime ? textToMin(c.start_time as string) : secToMin(range.start),
+        e: autoTime ? textToMin(c.end_time as string) : secToMin(range.end),
         label: c.course_abbr || c.course_name || '课程',
-        sub: `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`,
+        sub: autoTime
+          ? `${c.start_time}–${c.end_time}${c.location ? ' · ' + c.location : ''}`
+          : `第${sec}节 ${range.start}–${range.end}${c.location ? ' · ' + c.location : ''}`,
         color: 'var(--accent)',
         online: (c.location || '').includes('线上')
       })
     }
-    return list
-  }, [plans, courses])
+    return list.sort((a, b) => a.s - b.s)
+  }, [plans, courses, autoTime, sections])
+
+  const [winStart, winEnd] = useMemo(() => {
+    let s = 7
+    let e = 23
+    for (const b of blocks) {
+      s = Math.min(s, Math.floor(b.s / 60))
+      e = Math.max(e, Math.ceil(b.e / 60))
+    }
+    s = Math.max(0, s)
+    e = Math.min(24, e)
+    if (e - s < 4) e = Math.min(24, s + 4)
+    return [s, e]
+  }, [blocks])
+
+  const span = Math.max(1, winEnd - winStart)
+  const hourH = boxH > 120 ? Math.max(22, boxH / span) : 34
+  const overflowing = hourH * span > boxH + 1
+  const gridH = span * hourH
 
   return (
-    <div className="flex-1 min-h-0 flex gap-2.5">
-      <div className="flex-1 min-w-0 flex flex-col rounded-lg border border-[var(--border)] bg-[var(--bg)] overflow-hidden">
-        <div className="h-9 shrink-0 flex items-center gap-2 px-2.5 border-b border-[var(--border)]">
-          <span className="text-[11.5px] text-[var(--faint)] shrink-0">{date.slice(5)} 日计划</span>
-          <div className="ml-auto flex items-center gap-1.5">
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && onAdd(title, time, minutes, quadrant)}
-              placeholder="事项"
-              className="w-24 bg-transparent text-[11px] px-1.5 py-0.5 rounded border border-[var(--border)] outline-none focus:border-[var(--accent)] placeholder:text-[var(--faint)]"
-            />
-            <input
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className="bg-transparent text-[11px] px-1 py-0.5 rounded border border-[var(--border)] outline-none [color-scheme:dark]"
-            />
-            <select
-              value={minutes}
-              onChange={(e) => setMinutes(Number(e.target.value))}
-              className="bg-[var(--bg)] text-[11px] px-1 py-0.5 rounded border border-[var(--border)] outline-none"
-            >
-              {[15, 30, 45, 60, 90, 120].map((n) => (
-                <option key={n} value={n}>
-                  {n}分
-                </option>
-              ))}
-            </select>
-            <div className="flex items-center gap-0.5">
-              {Object.values(QUADRANTS).map((q) => (
-                <button
-                  key={q.key}
-                  onClick={() => setQuadrant(q.key)}
-                  title={q.name}
-                  className={`w-3.5 h-3.5 rounded-sm border ${
-                    quadrant === q.key ? 'border-white' : 'border-transparent opacity-60'
-                  }`}
-                  style={{ background: q.color }}
-                />
-              ))}
-            </div>
-            <button
-              onClick={() => {
-                onAdd(title || '新事项', time, minutes, quadrant)
-                setTitle('')
-              }}
-              className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-[var(--accent)] text-white text-[10.5px]"
-            >
-              <Plus size={10} /> 添加
-            </button>
-          </div>
-        </div>
-
-        <div ref={scrollRef} className="flex-1 overflow-y-auto relative">
-          <div className="relative" style={{ height: 24 * HOUR_H }}>
-            {Array.from({ length: 24 }, (_, h) => (
-              <div
-                key={h}
-                className="absolute left-0 right-0 border-t border-[var(--border-soft)]"
-                style={{ top: h * HOUR_H }}
-              >
-                <span className="absolute -top-2 left-1.5 text-[9.5px] text-[var(--faint)]">
-                  {pad(h)}:00
-                </span>
-              </div>
+    <div className="cal-day">
+      <div className="cal-day-head">
+        <span className="cal-day-title">
+          <b>{date.slice(5).replace('-', '/')}</b>
+          <span className="cal-day-wd">
+            周{WEEK_CN[(new Date(`${date}T00:00:00`).getDay() + 6) % 7]}
+          </span>
+          <span className="cal-day-kicker">日计划</span>
+        </span>
+        <div className="cal-day-form">
+          <input
+            className="input"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && onAdd(title, time, minutes, quadrant)}
+            placeholder="事项"
+            style={{ width: 132, height: 30 }}
+          />
+          <input
+            type="time"
+            className="input"
+            value={time}
+            onChange={(e) => setTime(e.target.value)}
+            style={{ width: 104, height: 30 }}
+          />
+          <select
+            className="select"
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+            style={{ width: 92, height: 30 }}
+          >
+            {[15, 30, 45, 60, 90, 120].map((n) => (
+              <option key={n} value={n}>
+                {n} 分
+              </option>
             ))}
-            <div className="absolute left-11 right-1.5 top-0 bottom-0">
-              {blocks.map((b, i) => (
+          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            {Object.values(QUADRANTS).map((q) => (
+              <button
+                key={q.key}
+                onClick={() => setQuadrant(q.key)}
+                title={q.name}
+                aria-pressed={quadrant === q.key}
+                className="qdot"
+                style={{ background: q.color }}
+              />
+            ))}
+          </div>
+          <button
+            className="btn btn-primary sm"
+            onClick={() => {
+              onAdd(title || '新事项', time, minutes, quadrant)
+              setTitle('')
+            }}
+          >
+            <Plus size={12} strokeWidth={2} /> 添加
+          </button>
+        </div>
+      </div>
+
+      <div ref={scrollRef} className={`cal-day-scroll${overflowing ? '' : ' fit'}`}>
+        <div className="cal-day-grid" style={{ height: gridH }}>
+          {Array.from({ length: span + 1 }, (_, i) => (
+            <div key={i} className="cal-hour" style={{ top: i * hourH }}>
+              <span>{pad(winStart + i)}:00</span>
+            </div>
+          ))}
+          <div className="cal-day-track">
+            {tasks.map((t, i) => {
+              if (!t.ddl) return null
+              const m = textToMin(t.ddl.slice(11, 16))
+              return (
+                <div
+                  key={`task-${t.id}`}
+                  className="cal-block"
+                  style={{
+                    top: ((m - winStart * 60) / 60) * hourH + i * 14,
+                    height: 22,
+                    background: 'color-mix(in oklch, var(--violet) 12%, var(--surface-2))',
+                    boxShadow: 'inset 0 0 0 1px color-mix(in oklch, var(--violet) 32%, transparent)'
+                  }}
+                  title={`${t.title} 截止 ${t.ddl.slice(11, 16)}`}
+                >
+                  <span className="label">
+                    {t.ddl.slice(11, 16)} 截止 · {t.title}
+                  </span>
+                </div>
+              )
+            })}
+
+            {blocks.map((b, i) => {
+              const top = ((b.s - winStart * 60) / 60) * hourH
+              const height = Math.max(16, ((b.e - b.s) / 60) * hourH - 1)
+              return (
                 <div
                   key={i}
-                  className="absolute left-0 right-0 rounded px-1.5 py-0.5 text-[10.5px] leading-tight overflow-hidden group"
+                  className={`cal-block${b.done ? ' done' : ''}${b.online ? ' online' : ''}`}
                   style={{
-                    top: b.top,
-                    height: b.height,
-                    background: `color-mix(in oklch, ${b.color} ${b.online ? 10 : 19}%, transparent)`,
-                    borderLeft: `2px ${b.online ? 'dashed' : 'solid'} ${b.color}`,
-                    color: b.done ? 'var(--faint)' : 'var(--fg)',
-                    textDecoration: b.done ? 'line-through' : 'none'
+                    top,
+                    height,
+                    background: `color-mix(in oklch, ${b.color} ${b.online ? 9 : 16}%, var(--surface-2))`,
+                    boxShadow: `inset 0 0 0 1px color-mix(in oklch, ${b.color} 34%, transparent)`
                   }}
                   title={`${b.label} ${b.sub}`}
                 >
-                  <div className="flex items-center justify-between gap-1">
-                    <span className="truncate">{b.label}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span className="label" style={{ flex: 1, minWidth: 0 }}>
+                      {b.label}
+                    </span>
                     {b.id != null && (
-                      <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100">
+                      <span className="actions" style={{ display: 'flex', gap: 2 }}>
                         <button
+                          className="mini-btn"
+                          style={{ width: 20, height: 20 }}
                           onClick={() => {
                             const p = plans.find((x) => x.id === b.id)
                             if (p) onToggle(p)
                           }}
-                          className="text-[var(--faint)] hover:text-[var(--ok)]"
+                          title="标记完成"
                         >
-                          <Check size={9} />
+                          <Check size={11} />
                         </button>
                         <button
+                          className="mini-btn danger"
+                          style={{ width: 20, height: 20 }}
                           onClick={() => onDelete(b.id as number)}
-                          className="text-[var(--faint)] hover:text-[var(--danger)]"
+                          title="删除"
                         >
-                          <Trash2 size={9} />
+                          <Trash2 size={11} />
                         </button>
                       </span>
                     )}
                   </div>
-                  {b.height > 26 && <div className="text-[9.5px] opacity-70 truncate">{b.sub}</div>}
+                  {height > 26 && <div className="sub">{b.sub}</div>}
                 </div>
-              ))}
-            </div>
+              )
+            })}
           </div>
         </div>
       </div>
-
-      <aside className="w-[176px] shrink-0 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 overflow-y-auto">
-        <div className="text-[11px] text-[var(--faint)] mb-1.5">当日课表</div>
-        {courses.length === 0 ? (
-          <div className="text-[10.5px] text-[var(--faint)] leading-relaxed">
-            今天没有课
-            <div className="text-[10px] text-[var(--faint)] mt-1">课表需学习通刷新后导入</div>
-          </div>
-        ) : (
-          <div className="space-y-1.5">
-            {courses.map((c) => (
-              <div key={c.id} className="rounded border border-[var(--border)] bg-[var(--bg)] p-1.5">
-                <div className="text-[11px] text-[var(--fg)] truncate">
-                  {c.course_abbr || c.course_name}
-                </div>
-                <div className="text-[10px] text-[var(--faint)] mt-0.5">
-                  {c.start_time}–{c.end_time}
-                </div>
-                {c.location && (
-                  <div className="flex items-start gap-0.5 text-[10px] text-[var(--faint)] mt-0.5">
-                    <MapPin size={8} className="mt-[1px] shrink-0" />
-                    <span className="truncate">{c.location}</span>
-                  </div>
-                )}
-                {c.weeks && c.weeks.length <= 6 && (
-                  <div className="text-[9.5px] text-[var(--faint)] mt-0.5">第 {c.weeks} 周</div>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {tasks.length > 0 && (
-          <div className="mt-2 pt-1.5 border-t border-[var(--border)]">
-            <div className="text-[10.5px] text-[var(--faint)] mb-1">当日截止</div>
-            {tasks.map((t) => (
-              <div key={t.id} className="text-[10.5px] text-[var(--violet)] truncate">
-                {t.ddl?.slice(11, 16)} {t.title}
-              </div>
-            ))}
-          </div>
-        )}
-      </aside>
     </div>
   )
 }

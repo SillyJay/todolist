@@ -27,14 +27,28 @@ def db_path() -> str:
     return os.path.join(data_dir(), "campus_assistant.db")
 
 
+def _writable(path: str) -> bool:
+    try:
+        os.makedirs(path, exist_ok=True)
+        probe = os.path.join(path, ".write_test")
+        with open(probe, "w", encoding="utf-8") as f:
+            f.write("ok")
+        os.remove(probe)
+        return True
+    except OSError:
+        return False
+
+
 def app_root() -> str:
     """助手（程序）所在目录。
 
     - 开发态：server/ 的父目录，即 campus-assistant/
-    - 打包后：可执行文件所在目录（PyInstaller 单文件时 __file__ 在临时目录，用 sys.executable）
+    - 打包后：可执行文件所在目录；**若该目录不可写**（装在 Program Files 下），
+      退回 %APPDATA%/CampusAssistant，保证 exports/ 与 workspace/ 能落盘。
     """
     if getattr(sys, "frozen", False):
-        return os.path.dirname(sys.executable)
+        base = os.path.dirname(sys.executable)
+        return base if _writable(base) else data_dir()
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 

@@ -6,7 +6,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from db.models import DailyPlan
+from db.models import DailyPlan, Space
+from routers.pair import current_space
 
 router = APIRouter()
 
@@ -52,8 +53,13 @@ def _ser(p: DailyPlan) -> dict:
 
 
 @router.get("")
-def list_plans(from_: str | None = None, to: str | None = None, db: Session = Depends(get_db)):
-    q = db.query(DailyPlan)
+def list_plans(
+    from_: str | None = None,
+    to: str | None = None,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
+    q = db.query(DailyPlan).filter(DailyPlan.space_id == space.id)
     if from_:
         q = q.filter(DailyPlan.date >= from_)
     if to:

@@ -16,6 +16,8 @@ const MAX_RESTART = 3
 
 let child: ChildProcess | null = null
 let currentPort = BASE_PORT
+/** 本机密钥：证明请求来自桌面 App 自己（隧道场景下不能用来源 IP 判断） */
+let adminToken = ''
 let restartCount = 0
 let healthTimer: NodeJS.Timeout | null = null
 let quitting = false
@@ -34,7 +36,23 @@ function findFreePort(port: number): Promise<number> {
 function backendCommand(port: number): { cmd: string; args: string[]; cwd: string } {
   if (app.isPackaged) {
     const exe = join(process.resourcesPath, 'backend', 'campus-assistant-server.exe')
-    return { cmd: exe, args: ['--port', String(port)], cwd: process.resourcesPath }
+    return {
+      cmd: exe,
+      // 绑 0.0.0.0：手机才能从局域网连进来（无 token 的请求后端仍只允许本机）
+      args: [
+        '--port',
+        String(port),
+        '--host',
+        '0.0.0.0',
+        '--admin-token',
+        adminToken,
+        '--mobile-dir',
+        join(process.resourcesPath, 'mobile', 'dist'),
+        '--apk-dir',
+        join(process.resourcesPath, 'apk')
+      ],
+      cwd: process.resourcesPath
+    }
   }
   // 开发环境：候选 Python 解释器（优先级从上到下）
   const serverDir = join(app.getAppPath(), '..', 'server')
@@ -45,7 +63,23 @@ function backendCommand(port: number): { cmd: string; args: string[]; cwd: strin
     join(process.env.USERPROFILE ?? '', '.workbuddy', 'binaries', 'python', 'envs', 'campus-assistant', 'Scripts', 'python.exe')
   ].filter(Boolean) as string[]
   const cmd = candidates.find((p) => require('fs').existsSync(p)) ?? 'python'
-  return { cmd, args: [join(serverDir, 'main.py'), '--port', String(port)], cwd: serverDir }
+  return {
+    cmd,
+    args: [
+      join(serverDir, 'main.py'),
+      '--port',
+      String(port),
+      '--host',
+      '0.0.0.0',
+      '--admin-token',
+      adminToken,
+      '--mobile-dir',
+      join(serverDir, '..', 'mobile', 'dist'),
+      '--apk-dir',
+      join(serverDir, '..', 'mobile', 'dist-apk')
+    ],
+    cwd: serverDir
+  }
 }
 
 async function checkHealth(): Promise<boolean> {
@@ -57,11 +91,22 @@ async function checkHealth(): Promise<boolean> {
   }
 }
 
-export async function startBackend(): Promise<number> {
+export function getAdminToken(): string {
+  return adminToken
+}
+
+export async function startBackend(token?: string): Promise<number> {
+  if (token) adminToken = token
   currentPort = await findFreePort(BASE_PORT)
   const { cmd, args, cwd } = backendCommand(currentPort)
   log(`[backend] starting: ${cmd} ${args.join(' ')}`)
-  child = spawn(cmd, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+  child = spawn(cmd, args, {
+    cwd,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    // 后端 stdout 默认 GBK：日志里出现 emoji（群名常带 ✨😋）会直接抛
+    // UnicodeEncodeError 把轮询线程带崩，这里强制 UTF-8
+    env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' }
+  })
   child.stdout?.on('data', (d) => log(`[backend:out] ${String(d).trim()}`))
   child.stderr?.on('data', (d) => log(`[backend:err] ${String(d).trim()}`))
   child.on('exit', (code) => {
@@ -69,7 +114,7 @@ export async function startBackend(): Promise<number> {
     if (!quitting && restartCount < MAX_RESTART) {
       restartCount++
       log(`[backend] restarting (${restartCount}/${MAX_RESTART})...`)
-      startBackend()
+      startBackend(adminToken)
     } else if (!quitting) {
       log('[backend] restart limit reached, please check logs')
     }

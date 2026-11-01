@@ -1,5 +1,7 @@
-appId: com.electron.app
-productName: CampusAssistant
+compression: maximum
+appId: com.sillyjay.todolist
+icon: build/icon.png
+productName: ToDoList
 directories:
   buildResources: build
 files:
@@ -9,15 +11,40 @@ files:
   - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}'
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+# 只保留中文/英文语言包（原始 42.5MB → 约 2MB）
+electronLanguages:
+  - zh-CN
+  - en-US
+
 asarUnpack:
   - resources/**
+# 后端与组件（由仓库根目录 build-backend.ps1 产出）
+# 注意：这两个路径不存在时 electron-builder 会报错，务必先跑 build-backend.ps1
+extraResources:
+  # onedir 形态：整个目录一起进 resources/backend
+  - from: ../server/dist/backend
+    to: backend
+  # 打包版也要能托管网页和 APK（隧道只穿一个端口）
+  - from: ../mobile/dist
+    to: mobile/dist
+  - from: ../mobile/dist-apk
+    to: apk
+    filter:
+      - '*.apk'
 win:
-  executableName: app
+  executableName: ToDoList
 nsis:
-  artifactName: ${name}-${version}-setup.${ext}
+  # 让用户可以选安装目录，而不是点一下就装到默认位置
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  artifactName: ToDoList-v${version}-setup.${ext}
   shortcutName: ${productName}
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
+  deleteAppDataOnUninstall: false
+portable:
+  artifactName: ToDoList-v${version}-portable.${ext}
 mac:
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:

@@ -1,18 +1,45 @@
 """文件路由（规格 §7.4 + Phase 3）：附件下载、列表、原生预览、工作区浏览。"""
+import json
 import os
 import re
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from db.database import get_db
-from db.models import File, Task
+from db.models import File, Setting, Task
 from services.workspace import save_bytes, safe_path, tree, workspace_root
 
 router = APIRouter()
+
+
+def _watch_gate(db: Session, task: Task) -> tuple[bool, str]:
+    """「获取文件」白名单：settings.file_watch_courses 为空表示全部课程。
+
+    键形如 `<platform>/<课程目录名>`，与前端筛选弹窗保持一致。
+    """
+
+    row = db.get(Setting, "file_watch_courses")
+    if not row or not row.value:
+        return True, ""
+    try:
+        watched = json.loads(row.value)
+    except ValueError:
+        return True, ""
+    if not isinstance(watched, list) or not watched:
+        return True, ""
+
+    course = (task.course_abbr or task.course_name or "").strip()
+    if not course:
+        return True, ""  # 判断不了就别拦
+    key = f"{task.platform}/{course}"
+    for w in watched:
+        if isinstance(w, str) and w == key:
+            return True, ""
+    return False, f"「{course}」不在获取文件列表里（文件页 → 筛选可调整）"
 
 
 class DownloadBody(BaseModel):
@@ -193,9 +220,12 @@ def delete_task_dir(rel: str):
 
 
 @router.get("/workspace")
-def workspace_info():
-    """工作区根目录 + 两层目录树（设置页展示）。"""
-    return {"root": workspace_root(), "tree": tree()}
+def workspace_info(include_tree: bool = Query(True, alias="tree")):
+    """工作区根目录 + 两层目录树。
+
+    设置页只用到 root，带上 tree=false 可省掉一次目录遍历（文件多时很慢）。
+    """
+    return {"root": workspace_root(), "tree": tree() if include_tree else []}
 
 
 @router.post("/open-workspace")
@@ -309,6 +339,10 @@ def list_attachments(task_id: int, db: Session = Depends(get_db)):
     if not task:
         raise HTTPException(404, "任务不存在")
 
+    allowed, why = _watch_gate(db, task)
+    if not allowed:
+        return {"items": [], "count": 0, "supported": False, "message": why}
+
     if task.platform not in ("chaoxing", "xiaoya"):
         return {
             "items": [],
@@ -358,6 +392,11 @@ def download_attachments(body: BulkDownloadBody, db: Session = Depends(get_db)):
     task = db.get(Task, body.task_id)
     if not task:
         raise HTTPException(404, "任务不存在")
+
+    allowed, why = _watch_gate(db, task)
+    if not allowed:
+        raise HTTPException(403, why)
+
     if task.platform == "xiaoya":
         return _download_xiaoya(task, body.keys, db)
     if task.platform != "chaoxing":

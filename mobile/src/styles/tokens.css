@@ -1,0 +1,100 @@
+/* MinimaList 风格设计 Token：无彩色、大字号、极简间距 */
+:root {
+  color-scheme: light;
+
+  --bg: #ffffff;
+  --bg-group: #f2f2f7;
+  --card: #ffffff;
+  --fg: #000000;
+  --fg-2: rgba(0, 0, 0, 0.45);
+  --fg-3: rgba(0, 0, 0, 0.3);
+  --line: #e5e5ea;
+  --line-soft: rgba(0, 0, 0, 0.08);
+  --tab-bg: #ffffff;
+  --tab-border: rgba(0, 0, 0, 0.06);
+  --tab-sel: rgba(0, 0, 0, 0.06);
+  --fab-bg: #000000;
+  --fab-fg: #ffffff;
+  --dot: #ff3b30;
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  --switch-off: rgba(120, 120, 128, 0.16);
+  --switch-on: #000000;
+}
+
+html[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg: #000000;
+  --bg-group: #000000;
+  --card: #1c1c1e;
+  --fg: #ffffff;
+  --fg-2: rgba(255, 255, 255, 0.45);
+  --fg-3: rgba(255, 255, 255, 0.28);
+  --line: #2c2c2e;
+  --line-soft: rgba(255, 255, 255, 0.08);
+  --tab-bg: #1c1c1e;
+  --tab-border: rgba(255, 255, 255, 0.08);
+  --tab-sel: rgba(255, 255, 255, 0.12);
+  --fab-bg: #ffffff;
+  --fab-fg: #000000;
+  --dot: #ff453a;
+  --switch-off: rgba(120, 120, 128, 0.32);
+  --switch-on: #ffffff;
+}
+
+:root {
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue',
+    'Microsoft YaHei', system-ui, sans-serif;
+  --font-num: -apple-system, 'SF Pro Display', 'Helvetica Neue', system-ui, sans-serif;
+
+  --h-title: 34px;
+  --h-sub: 17px;
+  --t-body: 17px;
+  --t-sub: 15px;
+  --t-note: 13px;
+
+  --pad: 20px;
+  --row: 56px;
+  --radius-card: 14px;
+  --radius-item: 12px;
+  --radius-pill: 999px;
+
+  --tab-h: 64px;
+  --tab-gap: 16px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior-y: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+input,
+textarea {
+  font: inherit;
+  color: inherit;
+}

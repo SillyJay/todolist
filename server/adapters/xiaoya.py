@@ -46,6 +46,20 @@ class XiaoyaAdapter(BaseAdapter):
         with open(self.cookie_path, "w", encoding="utf-8") as f:
             json.dump(cookies, f, ensure_ascii=False, indent=2)
 
+    def logout(self) -> dict:
+        """退出登录：清掉本机保存的小雅 Cookie。"""
+        removed = False
+        try:
+            if os.path.exists(self.cookie_path):
+                os.remove(self.cookie_path)
+                removed = True
+        except OSError as e:  # noqa: BLE001
+            return {"ok": False, "message": f"删除本地登录凭据失败：{e}"}
+        return {
+            "ok": True,
+            "message": "已退出小雅登录" if removed else "当前本来就没有登录",
+        }
+
     def has_session(self) -> bool:
         c = self.load_cookies()
         return bool(c.get("HS-prd-access-token"))

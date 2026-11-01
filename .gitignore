@@ -37,3 +37,11 @@ exports/
 
 # 本地组件（wechat-cli 等）
 bin/
+tools/dev/cloudflared.exe
+tools/dev/.admin-token
+
+# 不公开：比赛提交包（含截图与个人信息）、含域名的内部文档
+/submission/
+/docs/多用户服务器方案.md
+/docs/移动端测试隧道.md
+

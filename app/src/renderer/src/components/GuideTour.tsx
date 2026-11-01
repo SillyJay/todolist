@@ -9,26 +9,32 @@ interface Step {
 
 const STEPS: Step[] = [
   {
-    selector: '[data-guide="settings"]',
-    title: '第一步：配好 AI',
-    text: '点这里进设置，把智谱 GLM 的 API Key 填上。填完点「测试连接」，看到"正常"就成了。\n没有 Key 也能用，只是解析质量会差一些。',
-    place: 'right'
-  },
-  {
     selector: '[data-guide="account"]',
-    title: '第二步：登录平台',
-    text: '点「账号」，登录学习通和讯飞小雅。\n学习通用手机号+密码；小雅点「用内置浏览器登录」，登录完关掉窗口就行。',
+    title: '第一步：登录自己的账号',
+    text: '点右上角「账号」→ 注册（需要邀请码）或登录。\n登录后可以上传头像、改昵称，手机端会用同一个头像。',
     place: 'bottom'
   },
   {
+    selector: '[data-guide="settings"]',
+    title: '第二步：登录学习平台',
+    text: '设置 → 学习平台，分别登录「学习通」和「讯飞小雅」。\n学习通用手机号+密码；小雅点「用内置浏览器登录」，登录完关掉窗口就行。',
+    place: 'right'
+  },
+  {
+    selector: '[data-guide="settings"]',
+    title: '第三步：配好 AI',
+    text: '设置 → AI 模型，把智谱 GLM 的 API Key 填上，点「测试连接」看到"正常"就成了。\n没有 Key 也能用，只是消息化简和分类会差一些。',
+    place: 'right'
+  },
+  {
     selector: '[data-guide="import"]',
-    title: '第三步：随时收作业',
+    title: '第四步：随时收作业',
     text: '群里的通知复制过来，点这里粘贴，自动解析成任务。\n配了微信监听的话，这一步可以省略。',
     place: 'bottom'
   },
   {
     selector: '[data-guide="calendar"]',
-    title: '第四步：看课表',
+    title: '第五步：看课表',
     text: '日历页切到「周」，能看到每天几点在哪上课。\n点某一天，下面还有分钟级的日程表和当日课表。',
     place: 'right'
   }
@@ -77,25 +83,47 @@ export default function GuideTour({
   useLayoutEffect(() => {
     if (closed) return
 
-    const list = Array.from(document.querySelectorAll(step.selector))
-    const el =
-      list.find((n) => {
+    const findEl = (sel: string): Element | null =>
+      Array.from(document.querySelectorAll(sel)).find((n) => {
         const r = n.getBoundingClientRect()
         return r.width > 0 && r.height > 0
       }) ?? null
 
+    const el = findEl(step.selector)
+
     if (!el) {
-      // 目标不在当前页面：跳到下一步，不卡在这一屏
-      if (index < STEPS.length - 1) setIndex(index + 1)
+      // 目标不在当前页面：一次性跳到「下一个真的有元素」的步骤。
+      // 不能逐帧 setIndex(index+1)，否则会一帧跳一步，看起来就是连续闪动。
+      let target = -1
+      for (let i = index + 1; i < STEPS.length; i += 1) {
+        if (findEl(STEPS[i].selector)) {
+          target = i
+          break
+        }
+      }
+      if (target >= 0) setIndex(target)
       else finish()
       return
     }
 
     el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
 
+    // 关键：在 layout effect 里同步测一次。
+    // 如果只等 rAF 再测，切换步骤后的第一帧仍会画在「上一步的坐标」上，
+    // 下一帧才跳到新位置——这一帧的错位就是用户看到的「提示卡闪一下」。
+    setRect(el.getBoundingClientRect())
+
     let raf1 = 0
     let raf2 = 0
-    const measure = (): void => setRect(el.getBoundingClientRect())
+    let pending = 0
+    // 用 rAF 合并高频事件：滚动时每帧最多重算一次，避免连续重渲染
+    const measure = (): void => {
+      if (pending) return
+      pending = requestAnimationFrame(() => {
+        pending = 0
+        setRect(el.getBoundingClientRect())
+      })
+    }
 
     raf1 = requestAnimationFrame(() => {
       measure()
@@ -110,6 +138,7 @@ export default function GuideTour({
     return () => {
       cancelAnimationFrame(raf1)
       cancelAnimationFrame(raf2)
+      if (pending) cancelAnimationFrame(pending)
       ro.disconnect()
       window.removeEventListener('resize', measure)
       window.removeEventListener('scroll', measure, true)
@@ -141,8 +170,8 @@ export default function GuideTour({
   }
 
   // 提示卡定位：按声明的方向放，越界时自动翻转到另一侧
-  const tipW = 306
-  const tipH = 170
+  const tipW = 322
+  const tipH = 184
   const vw = window.innerWidth
   const vh = window.innerHeight
   const clamp = (v: number, min: number, max: number): number => Math.min(Math.max(v, min), max)
@@ -180,7 +209,7 @@ export default function GuideTour({
     <div className="fixed inset-0 z-[9999] pointer-events-none">
       {/* 挖洞高亮：外圈用超大 shadow 压暗，本身不接收点击 */}
       <div
-        className="absolute rounded-xl pointer-events-none transition-all duration-200"
+        className="absolute rounded-xl pointer-events-none"
         style={{
           top: spot.top,
           left: spot.left,
@@ -194,11 +223,13 @@ export default function GuideTour({
 
       {/* 提示卡：唯一可交互区域 */}
       <div
-        className="absolute pointer-events-auto rounded-xl p-4 transition-all duration-200"
+        className="absolute pointer-events-auto"
         style={{
           top,
           left,
           width: tipW,
+          padding: 16,
+          borderRadius: 13,
           background: 'var(--surface)',
           border: '1px solid var(--border)',
           boxShadow: 'var(--shadow)',
@@ -207,7 +238,7 @@ export default function GuideTour({
       >
         <div className="mb-2 flex items-center justify-between">
           <span
-            className="text-[13px] font-semibold"
+            className="text-[14px] font-semibold"
             style={{ fontFamily: 'var(--font-display)' }}
           >
             {step.title}
@@ -221,27 +252,14 @@ export default function GuideTour({
         </div>
 
         <div
-          className="whitespace-pre-line text-[12px] leading-relaxed"
+          className="whitespace-pre-line text-[12.5px] leading-relaxed"
           style={{ color: 'var(--muted)' }}
         >
           {step.text}
         </div>
 
         <div className="mt-4 flex items-center justify-between">
-          <button
-            type="button"
-            onClick={finish}
-            className="cursor-pointer rounded-md px-1.5 py-1 text-[11.5px] transition-colors"
-            style={{ color: 'var(--faint)', background: 'transparent' }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = 'var(--fg)'
-              e.currentTarget.style.background = 'var(--surface-2)'
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = 'var(--faint)'
-              e.currentTarget.style.background = 'transparent'
-            }}
-          >
+          <button type="button" onClick={finish} className="btn btn-ghost sm">
             跳过
           </button>
 
@@ -250,28 +268,12 @@ export default function GuideTour({
               <button
                 type="button"
                 onClick={() => setIndex(Math.max(0, index - 1))}
-                className="cursor-pointer rounded-md px-2 py-1 text-[11.5px] transition-colors"
-                style={{ color: 'var(--muted)', background: 'transparent' }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'var(--surface-2)'
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'transparent'
-                }}
+                className="btn btn-ghost sm"
               >
                 上一步
               </button>
             )}
-            <button
-              type="button"
-              onClick={next}
-              className="cursor-pointer rounded-lg px-3 py-1.5 text-[11.5px] font-medium transition-transform active:scale-[0.97]"
-              style={{
-                background: 'var(--primary-bg)',
-                color: 'var(--primary-fg)',
-                border: '1px solid var(--border)'
-              }}
-            >
+            <button type="button" onClick={next} className="btn btn-primary sm">
               {isLast ? '开始使用' : '下一步'}
             </button>
           </div>

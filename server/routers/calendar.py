@@ -8,8 +8,10 @@ from sqlalchemy.orm import Session
 
 from config import exports_dir
 from db.database import get_db
-from db.models import CourseSchedule, Setting, Task
+from routers.pair import current_space
+from db.models import CourseSchedule, Setting, Task, Space
 from services.holidays import range_info
+from services.course_abbr import abbr_of
 from services.schedule import week_of_date, weeks_contain
 from services.ics import export_ics
 
@@ -17,13 +19,13 @@ router = APIRouter()
 
 
 @router.post("/calendar/export")
-def export_calendar(db: Session = Depends(get_db)):
+def export_calendar(space: Space = Depends(current_space), db: Session = Depends(get_db)):
     """生成 ics → 返回文件路径。
 
     规格 §13.8：默认写入助手目录下 exports/，不写 C 盘；
     若用户显式配置 export_dir 则以配置为准。
     """
-    tasks = db.query(Task).all()
+    tasks = db.query(Task).filter(Task.space_id == space.id).all()
 
     out_dir = exports_dir()
     row = db.get(Setting, "export_dir")
@@ -52,7 +54,11 @@ def calendar_dayinfo(from_: str | None = None, to: str | None = None):
 
 
 @router.get("/schedule")
-def schedule_of_date(date: str | None = None, db: Session = Depends(get_db)):
+def schedule_of_date(
+    date: str | None = None,
+    space: Space = Depends(current_space),
+    db: Session = Depends(get_db),
+):
     """某日课表（规格 §13.5）：按 weekday 匹配 course_schedule。
 
     未接入学习通课表时返回空数组，由前端给出引导。
@@ -64,7 +70,11 @@ def schedule_of_date(date: str | None = None, db: Session = Depends(get_db)):
 
     weekday = target.isoweekday()  # 1=周一 … 7=周日
     week_no = _current_week_of(db, target)
-    rows = db.query(CourseSchedule).filter(CourseSchedule.weekday == weekday).all()
+    rows = (
+        db.query(CourseSchedule)
+        .filter(CourseSchedule.weekday == weekday, CourseSchedule.space_id == space.id)
+        .all()
+    )
     if week_no:
         rows = [r for r in rows if weeks_contain(r.weeks, week_no)]
     rows.sort(key=lambda r: r.start_time or "")
@@ -74,9 +84,10 @@ def schedule_of_date(date: str | None = None, db: Session = Depends(get_db)):
             {
                 "id": r.id,
                 "course_name": r.course_name,
-                "course_abbr": r.course_abbr,
+                "course_abbr": abbr_of(r.course_name) or r.course_abbr,
                 "start_time": r.start_time,
                 "end_time": r.end_time,
+                "section": r.section,
                 "location": r.location,
                 "weeks": r.weeks,
             }
@@ -101,9 +112,9 @@ def schedule_meta(db: Session = Depends(get_db)):
 
 
 @router.get("/schedule/all")
-def schedule_all(db: Session = Depends(get_db)):
+def schedule_all(space: Space = Depends(current_space), db: Session = Depends(get_db)):
     """整学期课表（周视图用）：一次返回全部，前端按 weekday 分组。"""
-    rows = db.query(CourseSchedule).all()
+    rows = db.query(CourseSchedule).filter(CourseSchedule.space_id == space.id).all()
     rows.sort(key=lambda r: ((r.weekday or 0), r.start_time or ""))
     first = db.get(Setting, "curriculum_first_week_date")
     maxw = db.get(Setting, "curriculum_max_week")
@@ -115,9 +126,10 @@ def schedule_all(db: Session = Depends(get_db)):
                 "id": r.id,
                 "weekday": r.weekday,
                 "course_name": r.course_name,
-                "course_abbr": r.course_abbr,
+                "course_abbr": abbr_of(r.course_name) or r.course_abbr,
                 "start_time": r.start_time,
                 "end_time": r.end_time,
+                "section": r.section,
                 "location": r.location,
                 "weeks": r.weeks,
             }

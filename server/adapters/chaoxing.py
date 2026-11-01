@@ -52,6 +52,20 @@ class ChaoxingAdapter(BaseAdapter):
         with open(self.cookie_path, "w", encoding="utf-8") as f:
             json.dump(cookies, f, ensure_ascii=False, indent=2)
 
+    def logout(self) -> dict:
+        """退出登录：清掉本机保存的 Cookie（不会注销超星账号本身）。"""
+        removed = False
+        try:
+            if os.path.exists(self.cookie_path):
+                os.remove(self.cookie_path)
+                removed = True
+        except OSError as e:  # noqa: BLE001
+            return {"ok": False, "message": f"删除本地登录凭据失败：{e}"}
+        return {
+            "ok": True,
+            "message": "已退出学习通登录" if removed else "当前本来就没有登录",
+        }
+
     def has_session(self) -> bool:
         """Cookie 中同时存在 _uid 与 _d 认为有会话（学习通的登录凭据）。"""
         c = self.load_cookies()
@@ -410,6 +424,104 @@ class ChaoxingAdapter(BaseAdapter):
                 )
         return courses
 
+    # ---------- 收件箱 / 考试 ----------
+
+    def fetch_notice_items(self) -> dict:
+        """拉收件箱通知 + 考试列表（需要登录态）。"""
+        from adapters.chaoxing_exam import fetch_exam_list
+        from adapters.chaoxing_notice import fetch_notices
+
+        cookies = self.load_cookies()
+        if not cookies.get("_uid"):
+            return {"ok": False, "code": "NOT_LOGGED_IN", "message": "学习通未登录", "notices": [], "exams": []}
+
+        notices: list[dict] = []
+        notice_err = ""
+        try:
+            notices = fetch_notices(cookies)
+        except Exception as e:  # noqa: BLE001
+            notice_err = f"{type(e).__name__}: {e}"
+
+        exams: list[dict] = []
+        exam_hint = ""
+        try:
+            exams = fetch_exam_list(cookies)
+            exam_hint = f"examcode/examlist · {len(exams)} 条"
+        except Exception as e:  # noqa: BLE001
+            exam_hint = f"{type(e).__name__}: {e}"
+
+        return {
+            "ok": True,
+            "notices": notices,
+            "exams": exams,
+            "notice_error": notice_err,
+            "exam_hint": exam_hint,
+        }
+
+    def notices_to_tasks(self, items: dict) -> list[dict]:
+        """把通知归一化成待入库任务。
+
+        去重键和「作业同步」保持一致：
+          - 作业提醒 → workId（与 fetch_assignments 写入的 source_msg_id 相同）
+          - 考试     → exam:<id>
+          - 普通通知 → notice:<idCode>
+        已经过了截止时间的作业提醒直接丢掉，避免一堆过期噪音。
+        """
+        from datetime import datetime as _dt
+
+        out: list[dict] = []
+        now = _dt.now().astimezone()
+
+        for n in items.get("notices", []):
+            kind = n.get("kind") or "notice"
+            work_id = (n.get("work_id") or "").strip()
+            ddl = n.get("ddl")
+
+            # 过期作业提醒没有价值
+            if kind == "homework" and ddl:
+                try:
+                    if _dt.fromisoformat(ddl) < now:
+                        continue
+                except ValueError:
+                    pass
+
+            if kind == "homework" and work_id:
+                key = work_id
+                title = (n.get("work_title") or n.get("title") or "学习通作业")[:200]
+            elif kind == "exam":
+                key = f"exam:{n['id']}"
+                title = f"考试：{n.get('work_title') or n.get('title') or '未命名'}"[:200]
+            else:
+                key = f"notice:{n['id']}"
+                title = (n.get("title") or "学习通通知")[:200]
+
+            course = (n.get("course") or "").strip()
+            if course and course not in title:
+                title = f"{course} · {title}"[:200]
+
+            raw_text = f"{n.get('title', '')} {n.get('content', '')}".strip()[:1000]
+            out.append(
+                {
+                    "platform": "chaoxing",
+                    "source_msg_id": key,
+                    "title": title,
+                    "raw_text": raw_text,
+                    "ddl": ddl,
+                    "url": n.get("url"),
+                    "kind": kind,
+                }
+            )
+
+        # 考试安排（未结束的才建任务）
+        try:
+            from adapters.chaoxing_exam import exams_to_rows
+
+            out.extend(exams_to_rows(items.get("exams") or []))
+        except Exception:  # noqa: BLE001
+            pass
+
+        return out
+
     def fetch_assignments(self, progress: Any = None) -> list[Assignment]:
         """拉取全部课程的作业列表。
 
@@ -421,7 +533,13 @@ class ChaoxingAdapter(BaseAdapter):
         courses = [c for c in self.fetch_courses() if c.get("course_id") and c.get("class_id")]
         total = len(courses)
 
-        from playwright.sync_api import sync_playwright
+        try:
+            from playwright.sync_api import sync_playwright
+        except ImportError as e:  # 打包版默认不带 playwright
+            raise RuntimeError(
+                "同步作业需要 Playwright 组件（学习通作业页只能用浏览器抓取）。"
+                "请在运行环境安装：pip install playwright && python -m playwright install msedge"
+            ) from e
 
         result: list[Assignment] = []
         cookies = self.load_cookies()

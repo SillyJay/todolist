@@ -1,26 +1,15 @@
-import {
-  CalendarDays,
-  Check,
-  FolderOpen,
-  ListTodo,
-  MessageSquare,
-  Settings
-} from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { CalendarDays, Check, FolderOpen, Inbox, ListTodo, MessageSquare, Settings } from 'lucide-react'
 import { NAV_ITEMS, PLATFORMS, type PageKey } from '../lib/ui'
+import { wechatFeedUnread } from '../lib/api'
 
 const ICONS = {
   tasks: ListTodo,
+  messages: Inbox,
   calendar: CalendarDays,
   agent: MessageSquare,
   files: FolderOpen,
   settings: Settings
-}
-
-export interface SyncStatus {
-  chaoxing: boolean
-  xiaoya: boolean
-  wechat: 'running' | 'offline' | 'not_configured'
-  ai: boolean
 }
 
 interface Props {
@@ -28,45 +17,39 @@ interface Props {
   onChange: (p: PageKey) => void
   platforms: string[]
   onTogglePlatform: (key: string) => void
-  workspaceRoot: string
-  status: SyncStatus
-}
-
-function baseName(path: string): string {
-  const parts = path.split(/[\\/]/).filter(Boolean)
-  return parts.length ? parts[parts.length - 1] : ''
-}
-
-function stateText(on: boolean, textOn: string, textOff: string): string {
-  return on ? textOn : textOff
 }
 
 function Sidebar({
   current,
   onChange,
   platforms,
-  onTogglePlatform,
-  workspaceRoot,
-  status
+  onTogglePlatform
 }: Props): React.JSX.Element {
-  const wsName = baseName(workspaceRoot) || '未配置工作区'
-  const wechatOn = status.wechat === 'running'
-  const wechatText =
-    status.wechat === 'running' ? '监听中' : status.wechat === 'offline' ? '未启动' : '未配置'
+  // 未读红点自己轮询：放在 Sidebar 内部，父级 MainLayout 就不会每 60 秒整树重渲染
+  // （之前放在 MainLayout，会让三个页面跟着重渲染，肉眼就是「文字闪一下」）
+  const [unread, setUnread] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const refresh = (): void => {
+      void wechatFeedUnread()
+        .then((r) => {
+          if (alive) setUnread(r.total)
+        })
+        .catch(() => undefined)
+    }
+    refresh()
+    const timer = window.setInterval(refresh, 60000)
+    window.addEventListener('ca:wechat-read', refresh)
+    return () => {
+      alive = false
+      window.clearInterval(timer)
+      window.removeEventListener('ca:wechat-read', refresh)
+    }
+  }, [])
 
   return (
     <aside className="sidebar">
-      <div className="ws-card" title={workspaceRoot || '在设置中指定工作区目录'}>
-        <div className="ws-icon" aria-hidden="true">
-          <FolderOpen size={15} strokeWidth={1.7} />
-        </div>
-        <div className="ws-text">
-          <div className="ws-name">{wsName}</div>
-          <div className="ws-sub">{workspaceRoot ? '本地工作区' : '设置中可指定'}</div>
-        </div>
-      </div>
-
-      <nav className="nav">
+      <nav className="nav" aria-label="主导航">
         {NAV_ITEMS.map((item) => {
           const Icon = ICONS[item.icon]
           const active = current === item.key
@@ -81,15 +64,18 @@ function Sidebar({
             >
               <Icon className="nav-icon" size={16} strokeWidth={1.8} />
               <span>{item.label}</span>
+              {item.key === 'messages' && unread > 0 && (
+                <span className="nav-badge">{unread > 99 ? '99+' : unread}</span>
+              )}
             </button>
           )
         })}
       </nav>
 
-      <div className="side-label">
-        <span>来源</span>
-      </div>
-      <div>
+      <div className="side-block">
+        <div className="side-label">
+          <span>来源筛选</span>
+        </div>
         {PLATFORMS.map((p) => {
           const on = platforms.includes(p.key)
           return (
@@ -103,47 +89,10 @@ function Sidebar({
               <span className="filter-box" aria-hidden="true">
                 <Check size={10} strokeWidth={3} />
               </span>
-              <span
-                className="filter-dot"
-                aria-hidden="true"
-                style={{ '--plat': `var(--plat-${p.key})` } as React.CSSProperties}
-              />
               <span>{p.label}</span>
             </button>
           )
         })}
-      </div>
-
-      <div className="sync-card">
-        <div className="sync-inner">
-          <div className="sync-title">
-            <span>连接状态</span>
-          </div>
-
-          <div className="sync-row">
-            <span className={`dot ${status.chaoxing ? 'ok' : 'off'}`} aria-hidden="true" />
-            <span>学习通</span>
-            <span className="state">{stateText(status.chaoxing, '已登录', '未登录')}</span>
-          </div>
-
-          <div className="sync-row">
-            <span className={`dot ${status.xiaoya ? 'ok' : 'off'}`} aria-hidden="true" />
-            <span>小雅</span>
-            <span className="state">{stateText(status.xiaoya, '已登录', '未登录')}</span>
-          </div>
-
-          <div className="sync-row">
-            <span className={`dot ${wechatOn ? 'ok' : 'off'}`} aria-hidden="true" />
-            <span>微信群</span>
-            <span className="state">{wechatText}</span>
-          </div>
-
-          <div className="sync-row">
-            <span className={`dot ${status.ai ? 'ok' : 'off'}`} aria-hidden="true" />
-            <span>AI 模型</span>
-            <span className="state">{stateText(status.ai, '已连接', '未配置')}</span>
-          </div>
-        </div>
       </div>
     </aside>
   )

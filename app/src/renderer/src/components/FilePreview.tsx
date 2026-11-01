@@ -130,63 +130,56 @@ function FilePreview({
   const maxRows = sheets[activeSheet]?.rows.length ?? 0
 
   return (
-    <div
-      className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-6"
-      onClick={onClose}
-    >
-      <div
-        className="w-full max-w-5xl h-[85vh] flex flex-col rounded-xl bg-[var(--bg)] border border-[var(--border)] shadow-2xl overflow-hidden"
-        onClick={(e) => e.stopPropagation()}
-      >
+    <div className="overlay" onClick={onClose}>
+      <div className="preview-shell" onClick={(e) => e.stopPropagation()}>
         {/* 工具栏 */}
-        <div className="h-11 shrink-0 flex items-center gap-2 px-3 border-b border-[var(--border)]">
-          <FileText size={14} className="text-[var(--faint)] shrink-0" />
-          <span className="text-[12.5px] text-[var(--fg)] truncate" title={file.rel}>
+        <div className="preview-bar">
+          <FileText size={15} className="files-icon" />
+          <span className="preview-name" title={file.rel}>
             {file.name}
           </span>
-          <span className="shrink-0 text-[10.5px] text-[var(--faint)]">{human(file.size)}</span>
-          <div className="ml-auto flex items-center gap-1">
+          <span className="preview-size">{human(file.size)}</span>
+          <div className="preview-actions">
             <button
               onClick={() => void openPath(file.rel)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[var(--faint)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
+              className="btn btn-ghost sm"
               title="用系统程序打开"
             >
-              <Download size={12} /> 打开
+              <Download size={13} /> 打开
             </button>
             <button
               onClick={() => void revealPath(file.rel)}
-              className="flex items-center gap-1 px-2 py-1 rounded text-[11px] text-[var(--faint)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
+              className="btn btn-ghost sm"
               title="在文件夹中显示"
             >
-              <FolderOpen size={12} /> 定位
+              <FolderOpen size={13} /> 定位
             </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 rounded text-[var(--faint)] hover:bg-[var(--surface-2)] hover:text-[var(--fg)]"
-              title="关闭（Esc）"
-            >
-              <X size={14} />
+            <button onClick={onClose} className="icon-btn" title="关闭（Esc）">
+              <X size={16} />
             </button>
           </div>
         </div>
 
         {/* 内容区 */}
-        <div className="flex-1 min-h-0 overflow-auto bg-[var(--bg-deep)]">
+        <div className="preview-body">
           {loading && (
-            <div className="h-full flex flex-col items-center justify-center gap-2 text-[var(--faint)]">
-              <Loader2 size={18} className="animate-spin" />
-              <span className="text-[12px]">正在解析…</span>
+            <div className="files-empty">
+              <Loader2 size={19} className="spin" />
+              <span>正在解析…</span>
             </div>
           )}
 
           {!loading && error && (
-            <div className="h-full flex flex-col items-center justify-center gap-2 px-8 text-center">
-              <AlertCircle size={20} className="text-[var(--warn)]" />
-              <div className="text-[12.5px] text-[var(--muted)]">无法预览</div>
-              <div className="text-[11px] text-[var(--faint)] max-w-md leading-relaxed">{error}</div>
+            <div className="files-empty">
+              <AlertCircle size={22} style={{ color: 'var(--warn)' }} />
+              <div style={{ fontSize: 14, color: 'var(--fg)' }}>无法预览</div>
+              <p style={{ maxWidth: 440, fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)' }}>
+                {error}
+              </p>
               <button
                 onClick={() => void openPath(file.rel)}
-                className="mt-2 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
+                className="btn btn-secondary sm"
+                style={{ marginTop: 6 }}
               >
                 用系统程序打开
               </button>
@@ -194,25 +187,23 @@ function FilePreview({
           )}
 
           {!loading && !error && kind === 'image' && (
-            <div className="h-full flex items-center justify-center p-4">
-              <img src={src} alt={file.name} className="max-w-full max-h-full object-contain" />
+            <div className="preview-center">
+              <img src={src} alt={file.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
             </div>
           )}
 
           {!loading && !error && kind === 'pdf' && (
-            <iframe src={src} title={file.name} className="w-full h-full border-0 bg-white" />
+            <iframe src={src} title={file.name} style={{ width: '100%', height: '100%', border: 0, background: '#fff' }} />
           )}
 
           {!loading && !error && kind === 'video' && (
-            <div className="h-full flex items-center justify-center p-4">
-              <video src={src} controls className="max-w-full max-h-full" />
+            <div className="preview-center">
+              <video src={src} controls style={{ maxWidth: '100%', maxHeight: '100%' }} />
             </div>
           )}
 
           {!loading && !error && kind === 'text' && (
-            <pre className="p-4 text-[12px] leading-relaxed text-[var(--muted)] whitespace-pre-wrap break-words font-mono">
-              {text}
-            </pre>
+            <pre className="preview-text">{text}</pre>
           )}
 
           {!loading && !error && kind === 'docx' && (
@@ -236,57 +227,46 @@ function FilePreview({
           )}
 
           {!loading && !error && kind === 'sheet' && (
-            <div className="min-h-full">
+            <div style={{ minHeight: '100%' }}>
               {sheets.length > 1 && (
-                <div className="sticky top-0 z-10 flex items-center gap-1 px-3 py-2 bg-[var(--bg)] border-b border-[var(--border)]">
+                <div className="preview-sheet-tabs">
                   {sheets.map((s, i) => (
                     <button
                       key={s.name}
                       onClick={() => setActiveSheet(i)}
-                      className={`px-2 py-1 rounded text-[11px] ${
-                        i === activeSheet
-                          ? 'bg-[var(--surface-3)] text-[var(--fg)]'
-                          : 'text-[var(--faint)] hover:text-[var(--muted)]'
-                      }`}
+                      className={`segment-tab${i === activeSheet ? ' active' : ''}`}
                     >
                       {s.name}
                     </button>
                   ))}
                 </div>
               )}
-              <table className="w-full border-collapse text-[11.5px]">
+              <table className="preview-sheet">
                 <tbody>
                   {(sheets[activeSheet]?.rows ?? []).map((row, ri) => (
-                    <tr key={ri} className={ri === 0 ? 'bg-[var(--surface-2)]' : 'hover:bg-[var(--surface-2)]'}>
+                    <tr key={ri} className={ri === 0 ? 'head' : ''}>
                       {row.map((cell, ci) => (
-                        <td
-                          key={ci}
-                          className={`px-2 py-1 border border-[var(--border-soft)] text-[var(--muted)] whitespace-nowrap ${
-                            ri === 0 ? 'font-medium text-[var(--fg)]' : ''
-                          }`}
-                        >
-                          {cell}
-                        </td>
+                        <td key={ci}>{cell}</td>
                       ))}
                     </tr>
                   ))}
                 </tbody>
               </table>
               {maxRows >= 500 && (
-                <div className="px-3 py-2 text-[10.5px] text-[var(--faint)]">
+                <div className="text-[12px] text-[var(--faint)]" style={{ padding: '8px 12px' }}>
                   只显示前 500 行，完整内容请用系统程序打开
                 </div>
               )}
               {maxRows === 0 && (
-                <div className="p-6 text-center text-[12px] text-[var(--faint)]">这个工作表是空的</div>
+                <div className="files-empty">这个工作表是空的</div>
               )}
             </div>
           )}
 
           {!loading && !error && kind === 'other' && (
-            <div className="h-full flex flex-col items-center justify-center gap-2 px-8 text-center">
-              <FileQuestion size={20} className="text-[var(--faint)]" />
-              <div className="text-[12.5px] text-[var(--muted)]">
+            <div className="files-empty">
+              <FileQuestion size={22} className="files-icon" />
+              <div style={{ fontSize: 13.5, color: 'var(--fg)' }}>
                 {['doc', 'xls', 'ppt'].includes(file.ext)
                   ? `老版 Office 格式（.${file.ext}）无法内嵌预览`
                   : ['zip', 'rar', '7z', 'tar', 'gz'].includes(file.ext)
@@ -295,16 +275,17 @@ function FilePreview({
                       ? `.${file.ext} 暂不支持预览`
                       : '该文件类型暂不支持预览'}
               </div>
-              <div className="max-w-md text-[11px] leading-relaxed text-[var(--faint)]">
+              <p style={{ maxWidth: 440, fontSize: 12.5, lineHeight: 1.65, color: 'var(--muted)' }}>
                 {['doc', 'xls', 'ppt'].includes(file.ext)
                   ? '浏览器只能解析 .docx / .xlsx / .pptx。点下面的「打开」用 Word 或 WPS 查看，体验也更好。'
                   : ['zip', 'rar', '7z', 'tar', 'gz'].includes(file.ext)
                     ? '点「打开」用解压软件处理，或在文件夹中定位后解压。'
                     : '当前支持：图片、PDF、Word(docx)、Excel(xlsx)、文本、视频。'}
-              </div>
+              </p>
               <button
                 onClick={() => void openPath(file.rel)}
-                className="mt-2 px-3 py-1.5 rounded-md bg-[var(--surface-2)] border border-[var(--border)] text-[11.5px] text-[var(--muted)] hover:border-[var(--accent)]"
+                className="btn btn-secondary sm"
+                style={{ marginTop: 6 }}
               >
                 用系统程序打开
               </button>

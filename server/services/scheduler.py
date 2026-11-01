@@ -7,6 +7,7 @@
 作业轮询（25-30 分钟）在 Phase 2 与 AI 摘要一起接入。
 """
 from datetime import datetime, timedelta
+import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -146,15 +147,165 @@ def _schedule_class_jobs(scheduler) -> None:
 
 
 def _boot_tasks() -> None:
-    """启动后的补动作：自动开始微信监听 + 排当天的课程刷新任务。"""
+    """启动后的补动作：自动提取微信密钥 → 自动开始监听 → 排当天的课程刷新任务。"""
     from services import scheduler as _self
 
+    # 1) 密钥：缺失时自动跑一次 wechat-cli init（已有则跳过，不阻塞界面）
+    try:
+        from adapters.wechat_listener import auto_init_keys
+
+        r = auto_init_keys()
+        if not r.get("skipped"):
+            print(f"[boot] 微信密钥：{r.get('message')}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[boot] 自动提取密钥失败：{e}", flush=True)
+
+    # 2) 监听：密钥就绪且微信在跑才启动
     try:
         from routers.adapters import auto_start_wechat
 
         auto_start_wechat()
     except Exception:  # noqa: BLE001
         pass
+
+    # 3) 组件更新：每次启动自动检查一次（带节流，失败不影响启动）
+    try:
+        from db.database import SessionLocal
+        from services.component_updater import auto_check_on_boot
+
+        r = auto_check_on_boot(SessionLocal)
+        if r.get("has_update"):
+            print(
+                f"[boot] wechat-cli 有新提交：{r.get('current')} → {r.get('latest')}",
+                flush=True,
+            )
+        elif r.get("error"):
+            print(f"[boot] 组件更新检查失败（忽略）：{r['error']}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[boot] 组件更新检查异常（忽略）：{e}", flush=True)
+
+
+# 微信看门狗状态：避免刷屏、避免频繁重试 init
+_WD = {"phase": "", "init_at": 0.0}
+
+
+def _wechat_watchdog() -> None:
+    """每 60 秒检查一次：微信没开就等着，开了就自动提密钥 + 开始监听。
+
+    解决的问题：开机时微信常常还没启动，而 `_boot_tasks` 只跑一次，
+    那一次失败后就再也不会自动开始监听了。
+    """
+    try:
+        from adapters.wechat_listener import keys_ready, wechat_running
+        from routers.adapters import auto_start_wechat, wechat
+    except Exception:  # noqa: BLE001
+        return
+
+    st = wechat.status()
+    if st.get("state") == "running":
+        if _WD["phase"] != "running":
+            _WD["phase"] = "running"
+            print("[wechat] 监听中", flush=True)
+        return
+
+    # 密钥还没拿到 → 自动试一次只读扫描（wcdb），失败 5 分钟后重试。
+    try:
+        from adapters.wechat_listener import maybe_auto_init
+
+        res = maybe_auto_init()
+        if res and res.get("ok"):
+            print(f"[wechat] 启动窗口内自动提取密钥成功：{res.get('message')}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[wechat] 自动提取异常：{type(e).__name__}: {e}", flush=True)
+
+    # 没配置群就别白跑（每次 wechat_running() 会起一个 tasklist 子进程）
+    try:
+        from db.database import SessionLocal
+        from db.models import Setting
+
+        db = SessionLocal()
+        try:
+            cfg = db.get(Setting, "wechat_groups")
+            if not (cfg and cfg.value and cfg.value.strip()):
+                return
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001
+        return
+
+    if not wechat_running():
+        if _WD["phase"] != "wechat_closed":
+            _WD["phase"] = "wechat_closed"
+            print("[wechat] 未检测到微信，60 秒后重试", flush=True)
+        return
+
+    # 微信已启动但密钥还没有：尝试提取（10 分钟冷却，init 本身可能要几分钟）
+    if not keys_ready():
+        now = time.time()
+        if now - _WD["init_at"] < 600:
+            return
+        _WD["init_at"] = now
+        _WD["phase"] = "initializing"
+        print("[wechat] 检测到微信已启动，尝试提取密钥…", flush=True)
+        try:
+            from adapters.wechat_listener import auto_init_keys
+
+            r = auto_init_keys(force=True)
+            print(f"[wechat] 密钥提取结果：{r.get('message')}", flush=True)
+        except Exception as e:  # noqa: BLE001
+            print(f"[wechat] 密钥提取异常：{e}", flush=True)
+        if not keys_ready():
+            return
+
+    try:
+        r = auto_start_wechat()
+        if r.get("ok"):
+            _WD["phase"] = "running"
+            print(f"[wechat] 自动开始监听：{r.get('message')}", flush=True)
+        elif r.get("message") != "未配置监听群":
+            print(f"[wechat] 暂不能开始监听：{r.get('message')}", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[wechat] 自动开始监听失败：{e}", flush=True)
+
+
+def _warm_caches() -> None:
+    """启动后预热慢接口（微信组件探测），避免用户第一次打开设置页卡一下。"""
+    try:
+        from adapters.wechat_listener import cli_status
+
+        cli_status()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+# 群消息保留天数（超过就删，避免 SQLite 无限膨胀）
+WECHAT_RETENTION_DAYS = 30
+
+
+def _cleanup_wechat_messages() -> None:
+    """每天清理超过保留期的群消息（任务不受影响）。"""
+    from datetime import datetime, timedelta
+
+    from db.database import SessionLocal
+    from db.models import WeChatMessage
+
+    cutoff = (datetime.now().astimezone() - timedelta(days=WECHAT_RETENTION_DAYS)).isoformat(
+        timespec="seconds"
+    )
+    db = SessionLocal()
+    try:
+        removed = (
+            db.query(WeChatMessage)
+            .filter(WeChatMessage.created_at < cutoff)
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+        if removed:
+            print(f"[wechat] 已清理 {removed} 条超过 {WECHAT_RETENTION_DAYS} 天的群消息", flush=True)
+    except Exception as e:  # noqa: BLE001
+        print(f"[wechat] 清理群消息失败（忽略）：{e}", flush=True)
+    finally:
+        db.close()
 
 
 def start_scheduler() -> None:
@@ -194,11 +345,36 @@ def start_scheduler() -> None:
         id="sync_schedule_startup",
         replace_existing=True,
     )
-    # 启动 30 秒后：自动开始微信监听 + 排当天课程刷新
+    # 启动 2 秒后预热缓存（微信组件探测约 0.7s，别让用户第一次开设置页等）
+    _scheduler.add_job(
+        _warm_caches,
+        "date",
+        run_date=datetime.now() + timedelta(seconds=2),
+        id="warm_caches",
+        replace_existing=True,
+    )
+    # 群消息保留 30 天：每天 03:30 清理一次
+    _scheduler.add_job(
+        _cleanup_wechat_messages,
+        CronTrigger(hour=3, minute=30),
+        id="wechat_cleanup_30d",
+        replace_existing=True,
+    )
+    # 微信看门狗：每 60 秒检查一次（微信没开就等，开了自动提密钥并监听）
+    _scheduler.add_job(
+        _wechat_watchdog,
+        "interval",
+        seconds=20,
+        id="wechat_watchdog",
+        max_instances=1,
+        coalesce=True,
+        replace_existing=True,
+    )
+    # 启动 2 秒后：自动提密钥 + 自动开始监听（用户点开软件就生效，不用手动操作）
     _scheduler.add_job(
         _boot_tasks,
         "date",
-        run_date=datetime.now() + timedelta(seconds=30),
+        run_date=datetime.now() + timedelta(seconds=2),
         id="boot_tasks",
         replace_existing=True,
     )

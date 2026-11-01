@@ -1,4 +1,5 @@
-import { Moon, PanelRight, Sun, UserRound } from 'lucide-react'
+import { Moon, PanelRight, Sun } from 'lucide-react'
+import Avatar from './Avatar'
 
 interface Props {
   title: string
@@ -7,6 +8,7 @@ interface Props {
   aiPanelVisible: boolean
   onToggleAiPanel: () => void
   onOpenLogin: () => void
+  account?: { email: string; display_name: string; avatar: string } | null
 }
 
 function TopBar({
@@ -15,23 +17,34 @@ function TopBar({
   onToggleTheme,
   aiPanelVisible,
   onToggleAiPanel,
-  onOpenLogin
+  onOpenLogin,
+  account
 }: Props): React.JSX.Element {
   return (
     <header className="topbar">
       <div className="brand">
         <div className="brand-mark" aria-hidden="true">
-          校
+          {/* 与桌面/手机应用图标同款：白色对勾 */}
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path
+              d="M6.2 12.6l3.6 3.6L17.8 8"
+              stroke="currentColor"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
         <div className="brand-text">
-          <span className="brand-name">校园助手</span>
-          <span className="brand-sub">CAMPUS AGENT</span>
+          <span className="brand-name">ToDoList</span>
+          <span className="brand-sub">TASK LIST</span>
         </div>
       </div>
 
       <div className="topbar-divider" aria-hidden="true" />
       <div className="crumb">
-        <b>{title}</b>
+        {/* key 变化触发一次轻量入场，让顶栏与页面切换的节奏对齐 */}
+        <b key={title}>{title}</b>
       </div>
 
       <div className="topbar-spacer" />
@@ -41,12 +54,12 @@ function TopBar({
           className="account-btn"
           data-guide="account"
           onClick={onOpenLogin}
-          title="连接平台账号"
+          title={account?.email || "登录 / 注册账号"}
         >
           <span className="avatar" aria-hidden="true">
-            <UserRound size={13} strokeWidth={1.8} />
+            <Avatar src={account?.avatar} size={18} />
           </span>
-          账号
+          {account?.display_name || account?.email?.split('@')[0] || '账号'}
         </button>
 
         <button

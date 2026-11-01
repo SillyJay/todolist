@@ -2,7 +2,7 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>校园信息管理助手</title>
+    <title></title>
     <!--
       CSP 说明：connect-src 必须放行本机后端（127.0.0.1/localhost 任意端口，
       因为端口会自动顺延 8765→8766…）与 Vite HMR 的 websocket。
@@ -11,6 +11,13 @@
       http-equiv="Content-Security-Policy"
       content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' blob:; connect-src 'self' http://127.0.0.1:* http://localhost:* ws://127.0.0.1:* ws://localhost:*"
     />
+    <!-- 首帧底色：必须在样式表加载前就正确，否则浅色模式重开会先黑一屏 -->
+    <style>
+      html { background: #1a1c22; color-scheme: dark; }
+      html.light { background: #f7f8fa; color-scheme: light; }
+    </style>
+    <!-- 在 <body> 解析前把 .light 挂上（见 public/theme-boot.js） -->
+    <script src="./theme-boot.js"></script>
   </head>
 
   <body>

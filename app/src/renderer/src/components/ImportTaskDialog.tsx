@@ -58,79 +58,91 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-      <div className="w-[560px] max-h-[86vh] overflow-y-auto rounded-xl border border-[var(--border)] bg-[var(--surface-2)] shadow-2xl">
-        <header className="flex items-center justify-between px-4 h-11 border-b border-[var(--border)]">
-          <span className="flex items-center gap-1.5 text-[13px] text-[var(--fg)]">
-            <ListPlus size={14} /> 从文本导入任务
-          </span>
-          <button onClick={onClose} className="text-[var(--faint)] hover:text-[var(--fg)]">
-            <X size={15} />
+    <div className="overlay" onClick={onClose}>
+      <div className="dialog wide" onClick={(e) => e.stopPropagation()}>
+        <div className="dialog-head">
+          <div>
+            <div className="dialog-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ListPlus size={17} strokeWidth={1.9} /> 从文本导入
+            </div>
+            <div className="dialog-sub">粘贴老师发的通知，自动提取标题、课程与截止时间</div>
+          </div>
+          <button onClick={onClose} className="icon-btn" title="关闭">
+            <X size={16} />
           </button>
-        </header>
+        </div>
 
-        <div className="p-4 space-y-3">
+        <div className="dialog-body">
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={6}
-            placeholder="把老师发的通知粘贴进来，例如：\n【高数】第三章习题请于10月25日23:59前提交，逾期不候"
-            className="w-full px-3 py-2 rounded-md bg-[var(--surface)] border border-[var(--border)] text-[12.5px] leading-relaxed outline-none focus:border-[var(--accent)] resize-none placeholder:text-[var(--faint)]"
+            placeholder="把老师发的通知粘贴进来，例如：&#10;【高数】第三章习题请于10月25日23:59前提交，逾期不候"
+            className="input"
+            style={{ resize: 'vertical', minHeight: 120, lineHeight: 1.7, padding: '10px 12px' }}
           />
 
-          <div className="flex items-center gap-2">
+          <div className="inline-actions" style={{ marginTop: -4 }}>
             <button
               onClick={() => void doExtract()}
               disabled={busy || !text.trim()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[var(--accent)] text-white text-[12px] disabled:opacity-40"
+              className="btn btn-primary sm"
             >
-              {busy ? <Loader2 size={13} className="animate-spin" /> : <Wand2 size={13} />}
+              {busy ? <Loader2 size={13} className="spin" /> : <Wand2 size={13} />}
               解析
             </button>
             {draft?.hint && (
-              <span className="text-[11px] text-[var(--warn)] flex items-center gap-1">
-                <AlertCircle size={11} /> {draft.hint}
+              <span className="inline-flex items-center gap-1.5 text-[12px] text-[var(--muted)]">
+                <AlertCircle size={12} /> {draft.hint}
               </span>
             )}
           </div>
 
           {draft && (
-            <div className="space-y-2 pt-2 border-t border-[var(--border)]">
-              <Field label="标题">
-                <input
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  className="w-full bg-transparent text-[12.5px] outline-none"
-                />
-              </Field>
-              <div className="flex gap-2">
-                <Field label="课程" className="flex-1">
+            <div style={{ borderTop: '1px solid var(--border-soft)', paddingTop: 16 }}>
+              <div className="setting-stack">
+                <label className="field">
+                  <span className="field-label">标题</span>
                   <input
-                    value={course}
-                    onChange={(e) => setCourse(e.target.value)}
-                    placeholder="可不填"
-                    className="w-full bg-transparent text-[12.5px] outline-none placeholder:text-[var(--faint)]"
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                    className="input"
                   />
-                </Field>
-                <Field label="截止时间" className="flex-1">
-                  <input
-                    type="datetime-local"
-                    value={ddl}
-                    onChange={(e) => setDdl(e.target.value)}
-                    className="w-full bg-transparent text-[12px] text-[var(--fg)] outline-none [color-scheme:dark]"
-                  />
-                </Field>
+                </label>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <label className="field" style={{ flex: 1 }}>
+                    <span className="field-label">课程</span>
+                    <input
+                      value={course}
+                      onChange={(e) => setCourse(e.target.value)}
+                      placeholder="可不填"
+                      className="input"
+                    />
+                  </label>
+                  <label className="field" style={{ flex: 1 }}>
+                    <span className="field-label">截止时间</span>
+                    <input
+                      type="datetime-local"
+                      value={ddl}
+                      onChange={(e) => setDdl(e.target.value)}
+                      className="input"
+                    />
+                  </label>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-[var(--faint)]">
+              <div className="dialog-foot" style={{ padding: '16px 0 0' }}>
+                <span className="left">
                   置信度 {Math.round((draft.confidence || 0) * 100)}% ·{' '}
                   {draft.engine === 'llm' ? 'AI 解析' : '本地规则'}
                 </span>
+                <button onClick={onClose} className="btn btn-ghost sm">
+                  取消
+                </button>
                 <button
                   onClick={() => void doConfirm()}
                   disabled={busy || !title.trim()}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-md bg-[color-mix(in_oklch,var(--ok)_16%,transparent)] text-[var(--ok)] text-[12px] disabled:opacity-40"
+                  className="btn btn-primary sm"
                 >
                   <Check size={13} /> 确认添加
                 </button>
@@ -138,26 +150,14 @@ export default function ImportTaskDialog({ onClose, onCreated }: Props): React.J
             </div>
           )}
 
-          {error && <div className="text-[11.5px] text-[var(--danger)] break-all">{error}</div>}
+          {error && (
+            <div className="status-note" style={{ color: 'var(--danger)', borderColor: 'color-mix(in oklch,var(--danger) 30%,transparent)' }}>
+              <AlertCircle size={13} />
+              <span style={{ wordBreak: 'break-all' }}>{error}</span>
+            </div>
+          )}
         </div>
       </div>
     </div>
-  )
-}
-
-function Field({
-  label,
-  children,
-  className
-}: {
-  label: string
-  children: React.ReactNode
-  className?: string
-}): React.JSX.Element {
-  return (
-    <label className={`block rounded-md bg-[var(--surface)] border border-[var(--border)] px-2.5 py-1.5 ${className ?? ''}`}>
-      <div className="text-[10.5px] text-[var(--faint)] mb-0.5">{label}</div>
-      {children}
-    </label>
   )
 }

@@ -63,7 +63,7 @@ AGENT_SYSTEM_PROMPT = """你是「校园信息管理助手」的内置 AI，服�
 # 摘要缓存用不到 prompt 之外的参数；模型参数集中在此
 LLM_DEFAULTS = {
     "base_url": "https://open.bigmodel.cn/api/paas/v4",
-    "model": "glm-4.5-flash",
+    "model": "glm-4.7-flash",
     "timeout": 30,
     "temperature": 0.3,
 }

@@ -1,13 +1,14 @@
-export type PageKey = 'tasks' | 'calendar' | 'agent' | 'files' | 'settings'
+export type PageKey = 'tasks' | 'messages' | 'calendar' | 'agent' | 'files' | 'settings'
 
 export interface NavItem {
   key: PageKey
   label: string
-  icon: 'tasks' | 'calendar' | 'agent' | 'files' | 'settings'
+  icon: 'tasks' | 'messages' | 'calendar' | 'agent' | 'files' | 'settings'
 }
 
 export const NAV_ITEMS: NavItem[] = [
   { key: 'tasks', label: '任务', icon: 'tasks' },
+  { key: 'messages', label: '消息', icon: 'messages' },
   { key: 'calendar', label: '日历', icon: 'calendar' },
   { key: 'agent', label: '对话', icon: 'agent' },
   { key: 'files', label: '文件', icon: 'files' },
