@@ -45,3 +45,7 @@ tools/dev/.admin-token
 /docs/多用户服务器方案.md
 /docs/移动端测试隧道.md
 
+
+# 构建产物：APK 不进仓库
+mobile/dist-apk/
+
