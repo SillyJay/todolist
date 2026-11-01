@@ -16,12 +16,15 @@ export function isNative(): boolean {
   return !!cap?.isNativePlatform?.()
 }
 
+/** 官方服务器：移动端不再让用户填地址 */
+export const OFFICIAL_SERVER = 'https://todo.sillyjay.top'
+
 export function getBase(): string {
+  // 原生壳里一律用官方地址；网页版沿用同源/局域网逻辑
+  if (isNative()) return OFFICIAL_SERVER
   const saved = localStorage.getItem(LS_BASE)
   if (saved) return saved
   if (typeof location === 'undefined') return 'http://127.0.0.1:8765'
-  // 原生壳里拿不到「当前页面就是后端」这种线索，只能让用户填地址
-  if (isNative()) return ''
   // 隧道/公网：网页由后端同源托管（/m），接口就在同一个域名的 /api 下
   if (location.protocol === 'https:') return location.origin
   // 局域网：手机打开页面时的 hostname 就是电脑地址
@@ -309,3 +312,26 @@ export const updateEvent = (
 
 export const deleteEvent = (id: string): Promise<{ ok: boolean }> =>
   request(`/api/sync/events/${id}`, { method: 'DELETE' })
+
+/** 检查 GitHub 最新 release（不需要 token） */
+export async function checkLatestRelease(): Promise<{
+  ok: boolean
+  latest?: string
+  url?: string
+  message?: string
+}> {
+  try {
+    const res = await fetch('https://api.github.com/repos/SillyJay/todolist/releases/latest', {
+      headers: { Accept: 'application/vnd.github+json' }
+    })
+    if (!res.ok) return { ok: false, message: `HTTP ${res.status}` }
+    const data = (await res.json()) as { tag_name?: string; html_url?: string }
+    return {
+      ok: true,
+      latest: String(data.tag_name || '').replace(/^v/, ''),
+      url: data.html_url || ''
+    }
+  } catch (e) {
+    return { ok: false, message: String(e) }
+  }
+}

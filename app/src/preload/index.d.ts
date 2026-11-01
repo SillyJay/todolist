@@ -12,6 +12,8 @@ interface Api {
     message?: string
   }>
   openExternal: (url: string) => Promise<{ ok: boolean }>
+  downloadUpdate: () => Promise<{ ok: boolean; path?: string; name?: string; size?: number; message?: string }>
+  showInFolder: (path: string) => Promise<{ ok: boolean }>
   getAutostart: () => Promise<{ app: boolean; tunnel: boolean; tunnelAvailable: boolean }>
   setAutostart: (kind: 'app' | 'tunnel', enabled: boolean) => Promise<{ ok: boolean; message?: string }>
   openAutostartFolder: () => Promise<{ ok: boolean }>

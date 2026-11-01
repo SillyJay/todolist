@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { authLogin, authRegister, getBase, isNative, setBase, setToken } from '../lib/api'
+import { authLogin, authRegister, isNative, setToken } from '../lib/api'
 import { TERMS, TERMS_VERSION } from '../lib/terms'
 
 interface Props {
@@ -12,8 +12,6 @@ function deviceName(): string {
 
 export default function LoginScreen({ onDone }: Props): React.JSX.Element {
   const [mode, setMode] = useState<'login' | 'register'>('login')
-  const [server, setServer] = useState(getBase() || 'https://todo.sillyjay.top')
-  const [showAdvanced, setShowAdvanced] = useState(false)
   const [agreed, setAgreed] = useState(false)
   const [termsOpen, setTermsOpen] = useState(false)
   const [email, setEmail] = useState('')
@@ -42,7 +40,6 @@ export default function LoginScreen({ onDone }: Props): React.JSX.Element {
     }
     setBusy(true)
     try {
-      if (server.trim()) setBase(server.trim())
       const r =
         mode === 'login'
           ? await authLogin(email.trim(), password, deviceName())
@@ -117,18 +114,6 @@ export default function LoginScreen({ onDone }: Props): React.JSX.Element {
           </>
         )}
 
-        {showAdvanced && (
-          <>
-            <label className="pair-label">服务器地址</label>
-            <input
-              className="pair-input"
-              placeholder="https://..."
-              value={server}
-              onChange={(e) => setServer(e.target.value)}
-            />
-          </>
-        )}
-
         {mode === 'register' && (
           <label className="terms-agree">
             <input type="checkbox" checked={agreed} onChange={(e) => setAgreed(e.target.checked)} />
@@ -142,10 +127,6 @@ export default function LoginScreen({ onDone }: Props): React.JSX.Element {
         )}
 
         {error && <div className="pair-error">{error}</div>}
-
-        <button className="pair-link" onClick={() => setShowAdvanced((v) => !v)}>
-          {showAdvanced ? '收起高级设置' : '高级设置'}
-        </button>
 
         <button className="pair-btn" disabled={busy} onClick={() => void submit()}>
           {busy ? '处理中…' : mode === 'login' ? '登录' : '注册并登录'}

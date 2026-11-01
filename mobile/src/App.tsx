@@ -9,7 +9,7 @@ import SettingsPage, { type ThemeMode } from './pages/SettingsPage'
 import LoginScreen from './pages/LoginScreen'
 import type { Course, Ev, Msg, Task } from './lib/types'
 
-const APP_VERSION = '0.3.2'
+const APP_VERSION = '1.0.0-beta'
 import {
   applyOps,
   fetchChanges,
@@ -18,7 +18,6 @@ import {
   newId,
   newOpId,
   parseEvent,
-  setBase,
   loadCache,
   saveCache,
   isNative,
@@ -140,7 +139,7 @@ export default function App(): React.JSX.Element {
   const [lastSync, setLastSync] = useState('—')
   const [theme, setTheme] = useState<ThemeMode>('system')
   const [notifications, setNotifications] = useState(true)
-  const [server, setServer] = useState(getBase())
+  const [server] = useState(getBase())
   const [draft, setDraft] = useState<Draft | null>(null)
   const [recording, setRecording] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -207,6 +206,17 @@ export default function App(): React.JSX.Element {
     mq.addEventListener('change', apply)
     return () => mq.removeEventListener('change', apply)
   }, [theme])
+
+  const logout = (): void => {
+    clearToken()
+    setAccount(null)
+    setNeedPair(true)
+    if (location.search) history.replaceState(null, '', location.pathname)
+  }
+
+  const goLogin = (): void => {
+    setNeedPair(true)
+  }
 
   const sync = useCallback(async (): Promise<void> => {
     try {
@@ -580,18 +590,8 @@ export default function App(): React.JSX.Element {
           onSync={() => void sync()}
           version={APP_VERSION}
           reminders={scheduledCount()}
-          server={server}
-          onServer={(v) => {
-            setServer(v)
-            setBase(v)
-            cursorRef.current = ''
-            void sync()
-          }}
-          onUnpair={() => {
-            clearToken()
-            cursorRef.current = ''
-            setNeedPair(true)
-          }}
+          onLogout={logout}
+          onLogin={goLogin}
         />
       )}
 

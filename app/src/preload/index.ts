@@ -23,6 +23,11 @@ const api = {
   }> => ipcRenderer.invoke('app:checkUpdate'),
   openExternal: (url: string): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke('app:openExternal', url),
+  /** 下载最新安装包到「下载」文件夹 */
+  downloadUpdate: (): Promise<{ ok: boolean; path?: string; name?: string; size?: number; message?: string }> =>
+    ipcRenderer.invoke('app:downloadUpdate'),
+  showInFolder: (path: string): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('app:showInFolder', path),
   /** 开机自启状态：app=桌面端，tunnel=访问隧道 */
   getAutostart: (): Promise<{ app: boolean; tunnel: boolean; tunnelAvailable: boolean }> =>
     ipcRenderer.invoke('app:getAutostart'),

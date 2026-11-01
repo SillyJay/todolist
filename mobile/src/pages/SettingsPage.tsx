@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react'
-import { putProfile } from '../lib/api'
+import { checkLatestRelease, putProfile } from '../lib/api'
 import {
   IconBell,
   IconChevron,
@@ -21,9 +21,10 @@ interface Props {
   version: string
   /** 已排队的本地提醒条数 */
   reminders: number
-  server: string
-  onServer: (v: string) => void
-  onUnpair: () => void
+  /** 退出登录（清 token，回到登录页） */
+  onLogout?: () => void
+  /** 未登录时跳去登录 */
+  onLogin?: () => void
   account?: { email: string; display_name: string; avatar: string } | null
   onAccount?: (a: { email: string; display_name: string; avatar: string } | null) => void
 }
@@ -44,16 +45,15 @@ export default function SettingsPage({
   onSync,
   version,
   reminders,
-  server,
-  onServer,
-  onUnpair,
+  onLogout,
+  onLogin,
   account,
   onAccount
 }: Props): React.JSX.Element {
-  const [addr, setAddr] = useState(server)
   const [name, setName] = useState(account?.display_name || '')
   const [avatar, setAvatar] = useState(account?.avatar || '')
   const [saving, setSaving] = useState(false)
+  const [updateMsg, setUpdateMsg] = useState('')
   const fileRef = useRef<HTMLInputElement | null>(null)
 
   /** 选图 → 压到 256px → dataURL */
@@ -93,11 +93,6 @@ export default function SettingsPage({
       setSaving(false)
     }
   }
-
-  const applyServer = (): void => {
-    const v = addr.trim().replace(/\/+$/, '')
-    if (v) onServer(v)
-  }
   return (
     <div className="screen">
       <div className="nav">
@@ -124,9 +119,20 @@ export default function SettingsPage({
                 onChange={(e) => setName(e.target.value)}
               />
             </div>
-            <button className="setting-action" disabled={saving} onClick={() => void saveProfile()}>
-              {saving ? '保存中' : '保存'}
-            </button>
+            {account?.email ? (
+              <div className="account-actions">
+                <button className="setting-action" disabled={saving} onClick={() => void saveProfile()}>
+                  {saving ? '保存中' : '保存'}
+                </button>
+                <button className="account-logout" onClick={() => onLogout?.()}>
+                  退出
+                </button>
+              </div>
+            ) : (
+              <button className="setting-action" onClick={() => onLogin?.()}>
+                登录
+              </button>
+            )}
           </div>
           <input
             ref={fileRef}
@@ -176,42 +182,11 @@ export default function SettingsPage({
               <span className="val">{lastSync}</span>
               <IconChevron className="chev-r" />
             </div>
-            <div className="srow" style={{ gap: 10 }}>
+            <button className="srow" style={{ width: '100%' }} onClick={onSync}>
               <span className="lead">
                 <IconCloud />
               </span>
-              <span className="label">服务器</span>
-              <input
-                className="server-input"
-                value={addr}
-                placeholder="http://192.168.1.10:8765"
-                onChange={(e) => setAddr(e.target.value)}
-                onBlur={applyServer}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') applyServer()
-                }}
-              />
-            </div>
-            <button className="srow" style={{ width: '100%' }} onClick={onSync}>
-              <span className="lead">
-                <IconInfo />
-              </span>
               <span className="label">立即同步</span>
-              <IconChevron className="chev-r" />
-            </button>
-            <div className="srow">
-              <span className="lead">
-                <IconUser />
-              </span>
-              <span className="label">已配对设备</span>
-              <span className="val">本机</span>
-              <IconChevron className="chev-r" />
-            </div>
-            <button className="srow" style={{ width: "100%" }} onClick={onUnpair}>
-              <span className="lead">
-                <IconInfo />
-              </span>
-              <span className="label">解除配对</span>
               <IconChevron className="chev-r" />
             </button>
           </div>
@@ -230,12 +205,28 @@ export default function SettingsPage({
                 aria-label="到期提醒"
               />
             </div>
-            <div className="srow">
+            <div
+              className="srow"
+              onClick={async () => {
+                setUpdateMsg('检查中…')
+                const r = await checkLatestRelease()
+                if (!r.ok) {
+                  setUpdateMsg(r.message || '检查失败')
+                  return
+                }
+                if (r.latest && r.latest !== version) {
+                  setUpdateMsg(`发现新版本 ${r.latest}`)
+                  if (r.url) window.open(r.url, '_blank')
+                } else {
+                  setUpdateMsg(`已是最新版本 ${version}`)
+                }
+              }}
+            >
               <span className="lead">
                 <IconInfo />
               </span>
-              <span className="label">关于</span>
-              <span className="val">{version}</span>
+              <span className="label">检查更新</span>
+              <span className="val">{updateMsg || version}</span>
               <IconChevron className="chev-r" />
             </div>
           </div>

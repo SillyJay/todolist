@@ -1,5 +1,5 @@
 import { execFileSync } from 'child_process'
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog, Notification as ElectronNotification } from 'electron'
 import { dirname, join } from 'path'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import os from 'node:os'
@@ -312,6 +312,28 @@ function createWindow(): void {
   createTray(mainWindow, quitApp)
 }
 
+async function autoCheckUpdate(): Promise<void> {
+  try {
+    const res = await fetch('https://api.github.com/repos/SillyJay/todolist/releases/latest', {
+      headers: { 'User-Agent': 'ToDoList' }
+    })
+    if (!res.ok) return
+    const data = (await res.json()) as { tag_name?: string }
+    const latest = String(data.tag_name || '').replace(/^v/, '')
+    const current = app.getVersion()
+    if (!latest || latest === current) return
+    if (ElectronNotification.isSupported()) {
+      new ElectronNotification({
+        title: 'ToDoList 有新版本',
+        body: `当前 ${current}，最新 ${latest}。设置 → 版本更新 可下载。`
+      }).show()
+    }
+    log(`[update] 发现新版本 ${latest}（当前 ${current}）`)
+  } catch {
+    /* 静默 */
+  }
+}
+
 app.whenReady().then(async () => {
   log('app ready')
   try {
@@ -413,6 +435,38 @@ function makeShortcut(lnkPath: string, target: string, args: string, wd: string)
     return { ok: true }
   })
 
+
+
+  ipcMain.handle('app:downloadUpdate', async () => {
+    try {
+      const rel = await fetch('https://api.github.com/repos/SillyJay/todolist/releases/latest', {
+        headers: { 'User-Agent': 'ToDoList' }
+      })
+      if (!rel.ok) return { ok: false, message: `获取版本失败（HTTP ${rel.status}）` }
+      const data = (await rel.json()) as {
+        assets?: { name?: string; browser_download_url?: string }[]
+      }
+      const asset = (data.assets || []).find(
+        (a) => /portable\.exe$/i.test(a.name || '') || /setup\.exe$/i.test(a.name || '')
+      )
+      if (!asset?.browser_download_url) return { ok: false, message: '这个版本没有可下载的安装包' }
+
+      const dir = app.getPath('downloads')
+      const target = join(dir, asset.name || 'ToDoList-update.exe')
+      const res = await fetch(asset.browser_download_url)
+      if (!res.ok || !res.body) return { ok: false, message: `下载失败（HTTP ${res.status}）` }
+      const buf = Buffer.from(await res.arrayBuffer())
+      writeFileSync(target, buf)
+      return { ok: true, path: target, name: asset.name, size: buf.length }
+    } catch (e) {
+      return { ok: false, message: String(e) }
+    }
+  })
+
+  ipcMain.handle('app:showInFolder', async (_e, target: string) => {
+    shell.showItemInFolder(target)
+    return { ok: true }
+  })
 
   ipcMain.handle('app:checkUpdate', async () => {
     try {
@@ -517,6 +571,8 @@ function makeShortcut(lnkPath: string, target: string, args: string, wd: string)
   log('window created')
 
   // DDL 到点提醒（规格模块 1）
+  setTimeout(() => void autoCheckUpdate(), 20_000)
+
   startNotificationWatcher(
     () => mainWindow,
     () => `http://127.0.0.1:${getBackendPort()}/api`

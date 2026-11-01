@@ -724,8 +724,14 @@ function SettingsPage(): React.JSX.Element {
                               return
                             }
                             if (r.newer) {
-                              setUpdateMsg(`发现新版本 ${r.latest}（当前 ${r.current}）`)
-                              if (r.url) await window.api?.openExternal?.(r.url)
+                              setUpdateMsg(`发现新版本 ${r.latest}（当前 ${r.current}），正在下载…`)
+                              const d = await window.api?.downloadUpdate?.()
+                              if (d?.ok && d.path) {
+                                setUpdateMsg(`已下载到 ${d.path}`)
+                                await window.api?.showInFolder?.(d.path)
+                              } else {
+                                setUpdateMsg(d?.message || '下载失败，可点「打开下载页」手动下载')
+                              }
                             } else {
                               setUpdateMsg(`已是最新版本 ${r.current}`)
                             }
@@ -737,6 +743,16 @@ function SettingsPage(): React.JSX.Element {
                       {updateMsg && (
                         <div className="status-note">
                           <span>{updateMsg}</span>
+                          <button
+                            className="btn btn-ghost sm"
+                            onClick={() =>
+                              void window.api?.openExternal?.(
+                                'https://github.com/SillyJay/todolist/releases/latest'
+                              )
+                            }
+                          >
+                            打开下载页
+                          </button>
                         </div>
                       )}
                     </div>
